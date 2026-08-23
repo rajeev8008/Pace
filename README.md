@@ -2,11 +2,8 @@
 
 Dailyflow is a local-first productivity application that combines a responsive task dashboard with a durable background-job pipeline. Users manage tasks and schedules through a FastAPI-served web interface, while PostgreSQL, a standalone scheduler, Apache Kafka, and horizontally scalable workers coordinate reminders and productivity summaries.
 
-The project demonstrates end-to-end software engineering across API design, relational data modeling, timezone-safe scheduling, asynchronous messaging, concurrency control, retry handling, observability, testing, and frontend integration.
-
 
 [<!-- [Upload your demo video to GitHub, then replace the placeholder below with the generated video URL.](https://github.com/user-attachments/assets/83eb173d-d2cc-4f56-9246-86f045d22fb6) -->](https://github.com/user-attachments/assets/83eb173d-d2cc-4f56-9246-86f045d22fb6)
-
 
 
 ## Features
