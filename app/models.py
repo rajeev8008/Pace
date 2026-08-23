@@ -182,7 +182,7 @@ class FocusSession(Base):
 class Activity(Base):
     __tablename__ = "activities"
     __table_args__ = (
-        CheckConstraint("type IN ('TASK', 'ROUTINE', 'FOCUS', 'GITHUB')", name="activity_type"),
+        CheckConstraint("type IN ('TASK', 'ROUTINE', 'FOCUS', 'GITHUB', 'LEETCODE')", name="activity_type"),
         UniqueConstraint("source_type", "source_id", name="activity_source_once"),
     )
 
@@ -193,3 +193,18 @@ class Activity(Base):
     title: Mapped[str] = mapped_column(String(200))
     detail: Mapped[str | None] = mapped_column(Text)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    external_id: Mapped[str | None] = mapped_column(String(200), unique=True)
+
+
+class ExternalProfile(Base):
+    __tablename__ = "external_profiles"
+    __table_args__ = (
+        CheckConstraint("provider IN ('GITHUB', 'LEETCODE')", name="profile_provider"),
+        UniqueConstraint("provider", name="one_profile_per_provider"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider: Mapped[str] = mapped_column(String(20))
+    username: Mapped[str] = mapped_column(String(100))
+    profile_url: Mapped[str] = mapped_column(String(500))
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

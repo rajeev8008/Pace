@@ -189,3 +189,18 @@ class ActivityRead(BaseModel):
     title: str
     detail: str | None
     occurred_at: datetime
+
+
+class ExternalProfileCreate(BaseModel):
+    provider: str = Field(pattern=r"^(GITHUB|LEETCODE)$")
+    profile_url: str = Field(min_length=10, max_length=500)
+
+
+class ExternalProfileRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    provider: str
+    username: str
+    profile_url: str
+    last_synced_at: datetime | None
