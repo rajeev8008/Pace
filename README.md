@@ -242,8 +242,4 @@ Run the isolated checks:
 
 The background check disables SMTP and uses an in-memory database, so test addresses cannot generate real outbound email.
 
-## Scope and Tradeoffs
 
-Dailyflow is intentionally single-user and local-first. It does not include authentication, Docker, Kubernetes, Redis, cloud infrastructure, observability platforms, microservices, or LLM-generated summaries. Those technologies would add operational cost without solving a current requirement.
-
-The current retry path is immediate rather than delayed, SMTP is synchronous inside each worker process, and the activity tracker derives its view from the task list. These are deliberate choices for a focused learning system and clear upgrade points if workload or product requirements grow.
