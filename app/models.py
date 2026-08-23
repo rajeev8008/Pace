@@ -1,7 +1,7 @@
 from datetime import date, datetime, time
 from enum import Enum
 
-from sqlalchemy import CheckConstraint, Date, DateTime, Enum as SAEnum, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, Enum as SAEnum, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -16,6 +16,20 @@ class TaskPriority(str, Enum):
     LOW = "LOW"
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
+
+
+class User(Base):
+    __tablename__ = "users"
+    __table_args__ = (CheckConstraint("id = 1", name="single_user_account"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    username: Mapped[str] = mapped_column(String(64), unique=True)
+    email: Mapped[str | None] = mapped_column(String(320), unique=True)
+    display_name: Mapped[str] = mapped_column(String(100))
+    password_hash: Mapped[str | None] = mapped_column(String(256))
+    github_id: Mapped[str | None] = mapped_column(String(64), unique=True)
+    google_id: Mapped[str | None] = mapped_column(String(255), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class Task(Base):
@@ -143,3 +157,39 @@ class DailyTaskCompletion(Base):
     daily_task_id: Mapped[int] = mapped_column(ForeignKey("daily_tasks.id", ondelete="CASCADE"))
     completed_on: Mapped[date] = mapped_column(Date)
     completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class FocusSession(Base):
+    __tablename__ = "focus_sessions"
+    __table_args__ = (
+        CheckConstraint("duration_seconds IS NULL OR duration_seconds >= 0", name="focus_duration_nonnegative"),
+        CheckConstraint("ended_at IS NULL OR ended_at >= started_at", name="focus_time_order"),
+        CheckConstraint("(ended_at IS NULL) = (duration_seconds IS NULL)", name="focus_completion_state"),
+        CheckConstraint("active_slot IS NULL OR active_slot = true", name="focus_active_slot_value"),
+        UniqueConstraint("active_slot", name="one_active_focus_session"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    category: Mapped[str | None] = mapped_column(String(100))
+    task_id: Mapped[int | None] = mapped_column(ForeignKey("tasks.id", ondelete="SET NULL"), index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    duration_seconds: Mapped[int | None] = mapped_column(Integer)
+    notes: Mapped[str | None] = mapped_column(Text)
+    active_slot: Mapped[bool | None] = mapped_column(Boolean, default=True, server_default="true")
+
+
+class Activity(Base):
+    __tablename__ = "activities"
+    __table_args__ = (
+        CheckConstraint("type IN ('TASK', 'ROUTINE', 'FOCUS', 'GITHUB')", name="activity_type"),
+        UniqueConstraint("source_type", "source_id", name="activity_source_once"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    type: Mapped[str] = mapped_column(String(20), index=True)
+    source_type: Mapped[str | None] = mapped_column(String(30))
+    source_id: Mapped[int | None] = mapped_column(Integer)
+    title: Mapped[str] = mapped_column(String(200))
+    detail: Mapped[str | None] = mapped_column(Text)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

@@ -139,3 +139,53 @@ class DailyTaskRead(BaseModel):
     title: str
     completed_today: bool
     completions: list[date]
+
+
+class FocusSessionStart(BaseModel):
+    category: str | None = Field(default=None, max_length=100)
+    task_id: int | None = Field(default=None, gt=0)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class FocusSessionStop(BaseModel):
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class FocusSessionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    category: str | None
+    task_id: int | None
+    started_at: datetime
+    ended_at: datetime | None
+    duration_seconds: int | None
+    notes: str | None
+
+    @field_validator("started_at", "ended_at", mode="before")
+    @classmethod
+    def serialize_stored_utc(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return (value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value).astimezone(timezone.utc)
+
+
+class ActivityUpdate(BaseModel):
+    title: Title | None = None
+    detail: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def title_cannot_be_null(self) -> Self:
+        if "title" in self.model_fields_set and self.title is None:
+            raise ValueError("title cannot be null")
+        return self
+
+
+class ActivityRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    type: str
+    title: str
+    detail: str | None
+    occurred_at: datetime

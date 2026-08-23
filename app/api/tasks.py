@@ -1,11 +1,11 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Task, TaskStatus
+from app.models import Activity, Task, TaskStatus
 from app.schemas import TaskCreate, TaskRead, TaskUpdate
 
 
@@ -48,8 +48,10 @@ def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)
     new_status = changes.get("status")
     if new_status is TaskStatus.COMPLETED and task.status is not TaskStatus.COMPLETED:
         task.completed_at = datetime.now(timezone.utc)
+        db.add(Activity(type="TASK", source_type="task", source_id=task.id, title=changes.get("title", task.title), detail="Scheduled task completed", occurred_at=task.completed_at))
     elif new_status is TaskStatus.PENDING:
         task.completed_at = None
+        db.execute(delete(Activity).where(Activity.source_type == "task", Activity.source_id == task.id))
 
     for field, value in changes.items():
         setattr(task, field, value)

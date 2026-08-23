@@ -39,3 +39,6 @@ jobs:
       - run: python -m tests.test_background
       - run: python -m tests.test_daily_tasks
       - run: python -m tests.test_auth
+      - run: python -m tests.test_focus_sessions
+      - run: python -m tests.test_activities
+      - run: python -m tests.test_oauth

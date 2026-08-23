@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.preferences import get_preferences
 from app.database import get_db
-from app.models import DailyTask, DailyTaskCompletion
+from app.models import Activity, DailyTask, DailyTaskCompletion
 from app.schemas import DailyTaskCompletionUpdate, DailyTaskCreate, DailyTaskRead
 
 
@@ -47,8 +47,12 @@ def set_today(task_id: int, payload: DailyTaskCompletionUpdate, db: Session = De
     task = task_or_404(task_id, db); local_today = today(db)
     completion = db.scalar(select(DailyTaskCompletion).where(DailyTaskCompletion.daily_task_id == task_id, DailyTaskCompletion.completed_on == local_today))
     if payload.completed and completion is None:
-        db.add(DailyTaskCompletion(daily_task_id=task_id, completed_on=local_today, completed_at=datetime.now(timezone.utc)))
+        completed_at = datetime.now(timezone.utc)
+        completion = DailyTaskCompletion(daily_task_id=task_id, completed_on=local_today, completed_at=completed_at)
+        db.add(completion); db.flush()
+        db.add(Activity(type="ROUTINE", source_type="daily_completion", source_id=completion.id, title=task.title, detail="Daily routine completed", occurred_at=completed_at))
     elif not payload.completed and completion is not None:
+        db.execute(delete(Activity).where(Activity.source_type == "daily_completion", Activity.source_id == completion.id))
         db.delete(completion)
     db.commit()
     return read(task, db)

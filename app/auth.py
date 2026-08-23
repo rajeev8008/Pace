@@ -3,20 +3,52 @@ import hashlib
 import hmac
 import json
 import os
+import re
+import secrets
 import time
+from datetime import datetime, timezone
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request as UrlRequest, urlopen
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
-from pydantic import BaseModel
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi.responses import RedirectResponse
+from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.models import User
 
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 COOKIE_NAME = "dayflow_session"
 SESSION_SECONDS = 60 * 60 * 24 * 7
+OAUTH_STATE_COOKIE = "pace_oauth_state"
 
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=8, max_length=128)
+
+
+class SignupRequest(LoginRequest):
+    username: str = Field(min_length=3, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")
+    email: str = Field(max_length=320, pattern=r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+    display_name: str = Field(min_length=1, max_length=100)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        return value.strip().lower()
+
+    @field_validator("display_name")
+    @classmethod
+    def clean_display_name(cls, value: str) -> str:
+        if not (value := value.strip()):
+            raise ValueError("Display name cannot be blank")
+        return value
 
 
 def _setting(name: str) -> str:
@@ -32,6 +64,21 @@ def _encode(value: bytes) -> str:
 
 def _decode(value: str) -> bytes:
     return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    digest = hashlib.scrypt(password.encode(), salt=salt, n=2**14, r=8, p=1)
+    return f"{_encode(salt)}.{_encode(digest)}"
+
+
+def verify_password(password: str, encoded: str) -> bool:
+    try:
+        salt, expected = encoded.split(".", 1)
+        digest = hashlib.scrypt(password.encode(), salt=_decode(salt), n=2**14, r=8, p=1)
+        return hmac.compare_digest(_encode(digest), expected)
+    except (ValueError, TypeError):
+        return False
 
 
 def create_session(username: str) -> str:
@@ -52,30 +99,141 @@ def verify_session(token: str) -> str:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required") from None
 
 
-def require_auth(dayflow_session: str | None = Cookie(default=None, alias=COOKIE_NAME)) -> str:
+def require_auth(
+    dayflow_session: str | None = Cookie(default=None, alias=COOKIE_NAME),
+    db: Session = Depends(get_db),
+) -> str:
     if not dayflow_session:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")
     username = verify_session(dayflow_session)
-    if not hmac.compare_digest(username, _setting("APP_USERNAME")):
+    if not db.scalar(select(User).where(User.username == username)):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")
     return username
 
 
-@router.post("/login")
-def login(credentials: LoginRequest, response: Response) -> dict[str, str]:
-    valid_user = hmac.compare_digest(credentials.username, _setting("APP_USERNAME"))
-    valid_password = hmac.compare_digest(credentials.password, _setting("APP_PASSWORD"))
-    if not (valid_user and valid_password):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid username or password")
+def _profile(user: User) -> dict[str, str | None]:
+    return {"username": user.username, "email": user.email, "display_name": user.display_name}
+
+
+def _set_session(response: Response, user: User) -> dict[str, str | None]:
     response.set_cookie(
         COOKIE_NAME,
-        create_session(credentials.username),
+        create_session(user.username),
         max_age=SESSION_SECONDS,
         httponly=True,
         secure=os.getenv("COOKIE_SECURE", "false").lower() == "true",
         samesite="strict",
     )
-    return {"username": credentials.username}
+    return _profile(user)
+
+
+def _oauth_url(request: Request, provider: str) -> str:
+    base = os.getenv("OAUTH_BASE_URL", "").rstrip("/")
+    return f"{base}/auth/oauth/{provider}/callback" if base else str(request.url_for("oauth_callback", provider=provider))
+
+
+def _request_json(url: str, *, data: dict[str, str] | None = None, token: str | None = None) -> dict | list:
+    headers = {"Accept": "application/json", "User-Agent": "Pace"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = UrlRequest(url, data=urlencode(data).encode() if data else None, headers=headers)
+    try:
+        with urlopen(request, timeout=10) as response:
+            return json.load(response)
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as error:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "OAuth provider request failed") from error
+
+
+def _oauth_owner(db: Session, provider: str, identity: str, email: str, name: str, username: str) -> User:
+    field = User.github_id if provider == "github" else User.google_id
+    user = db.scalar(select(User).where(field == identity))
+    owner = db.scalar(select(User).limit(1))
+    if user is None and owner is not None and (not owner.email or owner.email.lower() != email.lower()):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "This OAuth account does not match the Pace owner email")
+    if user is None:
+        user = owner
+    if user is None:
+        clean_username = re.sub(r"[^A-Za-z0-9_.-]", "", username)[:64] or "pace-user"
+        user = User(id=1, username=clean_username if len(clean_username) >= 3 else f"{clean_username}pace", email=email.lower(), display_name=name[:100], password_hash=None, created_at=datetime.now(timezone.utc))
+        db.add(user)
+    setattr(user, "github_id" if provider == "github" else "google_id", identity)
+    user.email = user.email or email.lower()
+    db.commit(); db.refresh(user)
+    return user
+
+
+@router.get("/oauth/{provider}")
+def oauth_start(provider: str, request: Request) -> RedirectResponse:
+    if provider not in {"github", "google"}:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "OAuth provider not found")
+    state = secrets.token_urlsafe(32)
+    redirect_uri = _oauth_url(request, provider)
+    if provider == "github":
+        url = "https://github.com/login/oauth/authorize?" + urlencode({"client_id": _setting("GITHUB_CLIENT_ID"), "redirect_uri": redirect_uri, "scope": "user:email", "state": state})
+    else:
+        url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode({"client_id": _setting("GOOGLE_CLIENT_ID"), "redirect_uri": redirect_uri, "response_type": "code", "scope": "openid email profile", "state": state, "prompt": "select_account"})
+    response = RedirectResponse(url)
+    response.set_cookie(OAUTH_STATE_COOKIE, state, max_age=600, httponly=True, secure=os.getenv("COOKIE_SECURE", "false").lower() == "true", samesite="lax")
+    return response
+
+
+@router.get("/oauth/{provider}/callback", name="oauth_callback")
+def oauth_callback(provider: str, request: Request, code: str, state: str, db: Session = Depends(get_db), pace_oauth_state: str | None = Cookie(default=None, alias=OAUTH_STATE_COOKIE)) -> RedirectResponse:
+    if provider not in {"github", "google"} or not pace_oauth_state or not hmac.compare_digest(state, pace_oauth_state):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid OAuth state")
+    redirect_uri = _oauth_url(request, provider)
+    if provider == "github":
+        token_data = _request_json("https://github.com/login/oauth/access_token", data={"client_id": _setting("GITHUB_CLIENT_ID"), "client_secret": _setting("GITHUB_CLIENT_SECRET"), "code": code, "redirect_uri": redirect_uri})
+        token = token_data.get("access_token")
+        if not token:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "GitHub did not provide an access token")
+        profile = _request_json("https://api.github.com/user", token=token)
+        emails = _request_json("https://api.github.com/user/emails", token=token)
+        verified = next((item["email"] for item in emails if item.get("primary") and item.get("verified")), None)
+        if not token or not verified:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "GitHub did not provide a verified email")
+        user = _oauth_owner(db, provider, str(profile["id"]), verified, profile.get("name") or profile["login"], profile["login"])
+    else:
+        token_data = _request_json("https://oauth2.googleapis.com/token", data={"client_id": _setting("GOOGLE_CLIENT_ID"), "client_secret": _setting("GOOGLE_CLIENT_SECRET"), "code": code, "grant_type": "authorization_code", "redirect_uri": redirect_uri})
+        token = token_data.get("access_token")
+        if not token:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Google did not provide an access token")
+        profile = _request_json("https://openidconnect.googleapis.com/v1/userinfo", token=token)
+        if not token or not profile.get("email_verified"):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Google did not provide a verified email")
+        user = _oauth_owner(db, provider, profile["sub"], profile["email"], profile.get("name") or profile["email"].split("@", 1)[0], profile["email"].split("@", 1)[0])
+    response = RedirectResponse("/")
+    response.delete_cookie(OAUTH_STATE_COOKIE)
+    _set_session(response, user)
+    return response
+
+
+@router.post("/signup", status_code=status.HTTP_201_CREATED)
+def signup(credentials: SignupRequest, response: Response, db: Session = Depends(get_db)) -> dict[str, str | None]:
+    if db.scalar(select(User.id).limit(1)):
+        raise HTTPException(status.HTTP_409_CONFLICT, "This Pace account has already been created")
+    user = User(id=1, username=credentials.username, email=credentials.email, display_name=credentials.display_name, password_hash=hash_password(credentials.password), created_at=datetime.now(timezone.utc))
+    db.add(user)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, "This Pace account has already been created") from None
+    return _set_session(response, user)
+
+
+@router.post("/login")
+def login(credentials: LoginRequest, response: Response, db: Session = Depends(get_db)) -> dict[str, str | None]:
+    user = db.scalar(select(User).where(or_(User.username == credentials.username, User.email == credentials.username.lower())))
+    if user is None and not db.scalar(select(User.id).limit(1)):
+        env_user, env_password = os.getenv("APP_USERNAME", ""), os.getenv("APP_PASSWORD", "")
+        if env_user and env_password and hmac.compare_digest(credentials.username, env_user) and hmac.compare_digest(credentials.password, env_password):
+            user = User(id=1, username=env_user, email=None, display_name=env_user, password_hash=hash_password(env_password), created_at=datetime.now(timezone.utc))
+            db.add(user)
+            db.commit()
+    if user is None or not user.password_hash or not verify_password(credentials.password, user.password_hash):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid username or password")
+    return _set_session(response, user)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -84,5 +242,5 @@ def logout(response: Response) -> None:
 
 
 @router.get("/me")
-def me(username: str = Depends(require_auth)) -> dict[str, str]:
-    return {"username": username}
+def me(username: str = Depends(require_auth), db: Session = Depends(get_db)) -> dict[str, str | None]:
+    return _profile(db.scalar(select(User).where(User.username == username)))
