@@ -43,21 +43,14 @@ def github(profile: ExternalProfile) -> list[dict]:
     headers = {"Accept": "application/vnd.github+json", "User-Agent": "Pace"}
     if token := os.getenv("GITHUB_SYNC_TOKEN"):
         headers["Authorization"] = f"Bearer {token}"
-    events = fetch_json(Request(f"https://api.github.com/users/{profile.username}/events/public?per_page=30", headers=headers))
+    suffix = "events" if token else "events/public"
+    events = fetch_json(Request(f"https://api.github.com/users/{profile.username}/{suffix}?per_page=30", headers=headers))
     items = []
     for event in events:
         payload = event.get("payload", {})
         kind, detail = event.get("type"), event.get("repo", {}).get("name")
         if kind == "PushEvent":
-            count = len(payload.get("commits", []))
-            if not count and payload.get("before") and payload.get("head"):
-                try:
-                    comparison = fetch_json(Request(f"https://api.github.com/repos/{event['repo']['name']}/compare/{payload['before']}...{payload['head']}", headers=headers))
-                    count = comparison.get("total_commits", 0)
-                except HTTPException:
-                    count = 1
-            count = max(1, count)
-            title = f"{count} GitHub commit{'s' if count != 1 else ''}"
+            continue
         elif kind in {"PullRequestEvent", "PullRequestReviewEvent", "PullRequestReviewCommentEvent"}:
             pull = payload.get("pull_request", {})
             action = "Merged" if pull.get("merged") else payload.get("action", "Updated").title()
@@ -76,6 +69,8 @@ def github(profile: ExternalProfile) -> list[dict]:
         else:
             title = kind.removesuffix("Event").replace("_", " ") if kind else "GitHub activity"
         items.append({"external_id": f"github:{event['id']}", "title": title, "detail": detail, "occurred_at": datetime.fromisoformat(event["created_at"].replace("Z", "+00:00"))})
+    commits = fetch_json(Request(f"https://api.github.com/search/commits?q=author%3A{profile.username}&sort=committer-date&order=desc&per_page=100", headers=headers))
+    items.extend({"external_id": f"github:commit:{commit['sha']}", "title": "1 GitHub commit", "detail": commit["repository"]["full_name"], "occurred_at": datetime.fromisoformat(commit["commit"]["committer"]["date"].replace("Z", "+00:00"))} for commit in commits.get("items", []))
     return items
 
 
@@ -130,6 +125,12 @@ def sync(profile_id: int, db: Session = Depends(get_db)) -> ExternalProfile:
         if profile.provider == "GITHUB" and not os.getenv("GITHUB_SYNC_TOKEN"):
             raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "GitHub public rate limit reached. Configure GITHUB_SYNC_TOKEN for live sync") from error
         raise
+    commits = [item for item in items if item["external_id"].startswith("github:commit:")]
+    if commits:
+        oldest = min(item["occurred_at"] for item in commits)
+        for activity in db.scalars(select(Activity).where(Activity.type == "GITHUB", Activity.title.like("%GitHub commit%"), Activity.occurred_at >= oldest)):
+            db.delete(activity)
+        db.flush()
     known = {activity.external_id: activity for activity in db.scalars(select(Activity).where(Activity.external_id.in_([item["external_id"] for item in items])))} if items else {}
     for item in items:
         if activity := known.get(item["external_id"]):
