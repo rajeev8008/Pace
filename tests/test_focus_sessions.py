@@ -9,16 +9,16 @@ from sqlalchemy.orm import Session
 
 from app.api.focus_sessions import get_active_focus_session, list_focus_sessions, start_focus_session, stop_focus_session
 from app.database import Base, engine
-from app.models import FocusSession, Task
+from app.models import Activity, DailyTask, FocusSession
 from app.schemas import FocusSessionStart, FocusSessionStop
 
 
 def test_focus_sessions() -> None:
     Base.metadata.create_all(engine)
     with Session(engine) as db:
-        task = Task(title="Write tests", created_at=datetime.now(timezone.utc))
-        db.add(task); db.commit()
-        active = start_focus_session(FocusSessionStart(category="Deep work", task_id=task.id, notes="No distractions"), db)
+        routine = DailyTask(title="Practice DSA", created_at=datetime.now(timezone.utc))
+        db.add(routine); db.commit()
+        active = start_focus_session(FocusSessionStart(category="Deep work", daily_task_id=routine.id, notes="No distractions"), db)
         assert active.ended_at is None
         assert active.duration_seconds is None
         assert get_active_focus_session(db).id == active.id
@@ -42,6 +42,9 @@ def test_focus_sessions() -> None:
         assert stopped.ended_at is not None
         assert stopped.duration_seconds is not None and stopped.duration_seconds >= 0
         assert stopped.notes == "Finished"
+        activity = db.query(Activity).filter_by(source_type="focus", source_id=active.id).one()
+        assert activity.title == "Practice DSA"
+        assert activity.detail.startswith("Deep work · Focused for")
         assert get_active_focus_session(db) is None
         assert list_focus_sessions(db)[0].id == active.id
 
@@ -53,11 +56,11 @@ def test_focus_sessions() -> None:
             raise AssertionError("A completed focus session was stopped twice")
 
         try:
-            start_focus_session(FocusSessionStart(task_id=999), db)
+            start_focus_session(FocusSessionStart(daily_task_id=999), db)
         except HTTPException as exc:
             assert exc.status_code == 404
         else:
-            raise AssertionError("A missing linked task was accepted")
+            raise AssertionError("A missing linked daily routine was accepted")
 
 
 if __name__ == "__main__":

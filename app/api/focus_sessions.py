@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Activity, FocusSession, Task
+from app.models import Activity, DailyTask, FocusSession
 from app.schemas import FocusSessionRead, FocusSessionStart, FocusSessionStop
 
 
@@ -21,8 +21,8 @@ def utc_aware(value: datetime) -> datetime:
 def start_focus_session(payload: FocusSessionStart, db: Session = Depends(get_db)) -> FocusSession:
     if db.scalar(select(FocusSession.id).where(FocusSession.ended_at.is_(None)).limit(1)):
         raise HTTPException(status.HTTP_409_CONFLICT, "A focus session is already active")
-    if payload.task_id is not None and db.get(Task, payload.task_id) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Linked task not found")
+    if payload.daily_task_id is not None and db.get(DailyTask, payload.daily_task_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Linked daily routine not found")
     session = FocusSession(**payload.model_dump(), started_at=datetime.now(timezone.utc), active_slot=True)
     db.add(session)
     try:
@@ -47,8 +47,10 @@ def stop_focus_session(session_id: int, payload: FocusSessionStop | None = None,
     session.active_slot = None
     if payload is not None and "notes" in payload.model_fields_set:
         session.notes = payload.notes
-    task = db.get(Task, session.task_id) if session.task_id else None
-    db.add(Activity(type="FOCUS", source_type="focus", source_id=session.id, title=session.category or (task.title if task else "Focus session"), detail=f"Focused for {max(1, round(session.duration_seconds / 60))} min", occurred_at=ended_at))
+    routine = db.get(DailyTask, session.daily_task_id) if session.daily_task_id else None
+    minutes = max(1, round(session.duration_seconds / 60))
+    detail = f"{session.category} · " if routine and session.category else ""
+    db.add(Activity(type="FOCUS", source_type="focus", source_id=session.id, title=routine.title if routine else session.category or "Focus session", detail=f"{detail}Focused for {minutes} min", occurred_at=ended_at))
     db.commit()
     db.refresh(session)
     return session

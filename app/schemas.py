@@ -143,7 +143,7 @@ class DailyTaskRead(BaseModel):
 
 class FocusSessionStart(BaseModel):
     category: str | None = Field(default=None, max_length=100)
-    task_id: int | None = Field(default=None, gt=0)
+    daily_task_id: int | None = Field(default=None, gt=0)
     notes: str | None = Field(default=None, max_length=2000)
 
 
@@ -157,6 +157,7 @@ class FocusSessionRead(BaseModel):
     id: int
     category: str | None
     task_id: int | None
+    daily_task_id: int | None
     started_at: datetime
     ended_at: datetime | None
     duration_seconds: int | None
