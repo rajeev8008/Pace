@@ -8,12 +8,7 @@ Pace is a single-user productivity application for daily routines, one-time task
 
 ### Walkthrough
 
-<img width="1878" height="1066" alt="image" src="https://github.com/user-attachments/assets/c830e5a2-5f50-4ec8-a02e-629320035f31" />
-<img width="1887" height="1064" alt="image" src="https://github.com/user-attachments/assets/58f20227-3584-43e5-8f15-d1d7b92b0d64" />
-<img width="1875" height="1023" alt="image" src="https://github.com/user-attachments/assets/30d5d4e0-bd85-4c4c-96ec-8ca967263418" />
-<img width="1870" height="1064" alt="image" src="https://github.com/user-attachments/assets/dbcf1e5e-afb5-4b06-a4e9-2be990bce591" />
-
-
+https://github.com/user-attachments/assets/83eb173d-d2cc-4f56-9246-86f045d22fb6
 
 ### Interface
 
