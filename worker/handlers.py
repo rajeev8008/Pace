@@ -56,7 +56,7 @@ def daily_digest(db: Session, now: datetime | None = None) -> str:
 
 def handle_daily_digest(db: Session, _: Job) -> None:
     settings = preference(db)
-    send_email(settings.email, "Your Dayflow Daily Digest", daily_digest(db))
+    send_email(settings.email, "Your Pace Daily Digest", daily_digest(db))
 
 
 def weekly_summary(db: Session, now: datetime | None = None) -> str:
@@ -75,7 +75,7 @@ def weekly_summary(db: Session, now: datetime | None = None) -> str:
     productive = days.most_common(1)[0][0] if days else "None"
     rate = round(len(completed) / len(created) * 100) if created else 0
     return (
-        "Your Dayflow Weekly Summary\n\n"
+        "Your Pace Weekly Summary\n\n"
         f"Tasks created: {len(created)}\nTasks completed: {len(completed)}\n"
         f"Completion rate: {rate}%\nHigh-priority completed: {high}\n"
         f"Most productive day: {productive}\nOverdue: {len(overdue)}"
@@ -84,4 +84,4 @@ def weekly_summary(db: Session, now: datetime | None = None) -> str:
 
 def handle_weekly_summary(db: Session, _: Job) -> None:
     settings = preference(db)
-    send_email(settings.email, "Your Dayflow Weekly Summary", weekly_summary(db))
+    send_email(settings.email, "Your Pace Weekly Summary", weekly_summary(db))
