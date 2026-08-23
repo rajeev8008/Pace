@@ -1,10 +1,10 @@
-from datetime import datetime, time, timezone
+from datetime import date, datetime, time, timezone
 from typing import Annotated, Self
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
-from app.models import TaskPriority, TaskStatus, Weekday
+from app.models import JobStatus, JobType, TaskPriority, TaskStatus, Weekday
 
 
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
@@ -110,3 +110,32 @@ class PreferenceRead(BaseModel):
     weekly_summary_enabled: bool
     weekly_summary_day: Weekday
     weekly_summary_time: time
+
+
+class JobRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    type: JobType
+    status: JobStatus
+    task_id: int | None
+    attempts: int
+    created_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+    error: str | None
+
+
+class DailyTaskCreate(BaseModel):
+    title: Title
+
+
+class DailyTaskCompletionUpdate(BaseModel):
+    completed: bool
+
+
+class DailyTaskRead(BaseModel):
+    id: int
+    title: str
+    completed_today: bool
+    completions: list[date]
