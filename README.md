@@ -1,99 +1,70 @@
 # Dailyflow
 
-Dailyflow is a local-first productivity application that combines a responsive task dashboard with a durable background-job pipeline. Users manage tasks and schedules through a FastAPI-served web interface, while PostgreSQL, a standalone scheduler, Apache Kafka, and horizontally scalable workers coordinate reminders and productivity summaries.
+Dailyflow is a full-stack productivity application for daily routines, scheduled tasks, reminders, and email summaries. It pairs a fast, responsive interface with a PostgreSQL-backed FastAPI API and a durable Kafka job pipeline.
 
-
-[<!-- [Upload your demo video to GitHub, then replace the placeholder below with the generated video URL.](https://github.com/user-attachments/assets/83eb173d-d2cc-4f56-9246-86f045d22fb6) -->](https://github.com/user-attachments/assets/83eb173d-d2cc-4f56-9246-86f045d22fb6)
-
+https://github.com/user-attachments/assets/83eb173d-d2cc-4f56-9246-86f045d22fb6
 
 ## Features
 
-- Create, retrieve, update, complete, filter, and delete tasks
-- Track recurring daily routines that reset each local calendar day while preserving completion history
-- Set priorities, due dates, and reminder timestamps
-- Configure email, timezone, daily digest, and weekly summary preferences
-- Schedule work using the user's local timezone while storing PostgreSQL timestamps in UTC
-- Deliver task reminders, daily digests, and weekly summaries through SMTP
-- Distribute background jobs across Kafka consumers in the `dayflow-workers` group
-- Persist `QUEUED`, `RUNNING`, `SUCCESS`, and `FAILED` job states
-- Retry failed jobs up to three times before publishing them to a dead-letter topic
-- Prevent repeated reminders and duplicate periodic jobs with persisted scheduling state
-- Visualize twelve weeks of completed work in a GitHub-style activity tracker
+- Create, retrieve, edit, complete, filter, and delete scheduled tasks
+- Track recurring daily routines that reset each local calendar day
+- Visualize 12 weeks of completed work in a GitHub-style activity tracker
+- Configure timezone-aware reminders, daily digests, and weekly summaries
+- Protect application data with signed, HttpOnly session authentication
 - Switch between responsive light and dark themes
+- Distribute background jobs through Kafka with retries and dead-letter handling
 
 ## Architecture
 
-```text
-Browser
-   |
-   | HTTP/JSON
-   v
-FastAPI --------------------------> PostgreSQL
-   |                                 | Tasks
-   | serves UI                       | Preferences
-   v                                 | Jobs
-HTML / CSS / JavaScript              |
-                                     v
-                                 Scheduler
-                                     |
-                                     | publish
-                                     v
-                              Apache Kafka
-                         productivity-jobs
-                         productivity-jobs-retry
-                         productivity-jobs-dead
-                                     |
-                           consumer group: dayflow-workers
-                              +------+------+ 
-                              |             |
-                           Worker 1      Worker N
-                              |
-                              v
-                    Reminder / Daily / Weekly
-                              |
-                              v
-                         SMTP service
+```mermaid
+flowchart LR
+    User([User]) --> UI[Responsive Web UI]
+    UI -->|HTTPS and signed session cookie| API[FastAPI API]
+    API --> DB[(PostgreSQL)]
+    Scheduler[Scheduler] -->|Find due work| DB
+    Scheduler -->|Publish jobs| Kafka{{Apache Kafka}}
+    Kafka -->|dayflow-workers group| Workers[Worker pool]
+    Workers -->|Update job state| DB
+    Workers -->|Retry failures| Retry[Retry topic]
+    Retry --> Workers
+    Workers -->|Exhausted jobs| DLQ[Dead-letter topic]
+    Workers --> Email[SMTP email service]
+    Email --> User
 ```
 
-The API handles immediate user requests. The scheduler answers what work is due, Kafka distributes that work, workers execute it, and PostgreSQL remains the source of truth for both application and job state.
+FastAPI handles synchronous user requests, PostgreSQL is the source of truth, the scheduler detects due work, Kafka distributes it, and workers execute reminders and summaries independently of the request path. See [ARCHITECTURE.md](ARCHITECTURE.md) for the detailed design.
 
-See the detailed [architecture document](ARCHITECTURE%283%29.md) and [implementation phases](PHASES%284%29.md).
+## Software Engineering Skills Demonstrated
 
-## Engineering Highlights
-
-| Area | Implementation |
+| Skill | How Dailyflow demonstrates it |
 |---|---|
-| API design | FastAPI routers with Pydantic request validation and explicit response models |
-| Persistence | SQLAlchemy 2.x models, PostgreSQL constraints, and versioned Alembic migrations |
-| Time correctness | Offset-required API timestamps, UTC `TIMESTAMPTZ` storage, IANA timezone preferences |
-| Calendar boundaries | Local daily and Monday-to-Monday weekly ranges converted to UTC before querying |
-| Scheduling | Separate polling process with row locking and persisted next-run state |
-| Messaging | Three-partition Kafka topics and JSON job envelopes keyed by job ID |
-| Parallelism | Multiple consumers share the `dayflow-workers` group without fan-out duplication |
-| Reliability | Job lifecycle persistence, manual offset commits, bounded retries, and dead-letter routing |
-| Idempotency | Reminder processing timestamps, periodic occurrence keys, unique constraints, and terminal-state guards |
-| Delivery | Provider-independent email service backed by authenticated SMTP and STARTTLS |
-| Frontend | Dependency-free responsive UI with daily routines, scheduled work, preferences, dark mode, and activity tracking |
-| Testing | Isolated SQLite checks for CRUD, validation, schedules, summaries, lifecycle transitions, retries, and deduplication |
+| Backend engineering | Modular FastAPI routers, Pydantic validation, explicit response models, and RESTful CRUD semantics |
+| Database engineering | SQLAlchemy 2.x models, PostgreSQL constraints, UTC `TIMESTAMPTZ` data, and versioned Alembic migrations |
+| Security engineering | Constant-time credential comparison, signed expiring sessions, HttpOnly and SameSite cookies, protected API boundaries, and environment-managed secrets |
+| Distributed systems | Kafka producers and consumers, partition-based parallelism, and the shared `dayflow-workers` consumer group |
+| Reliability engineering | Persisted job states, manual offset commits, bounded retries, dead-letter routing, row locking, and idempotency controls |
+| Time correctness | IANA timezone preferences and local daily and Monday-to-Monday weekly boundaries converted to UTC before queries |
+| Frontend engineering | Responsive dependency-free HTML, CSS, and JavaScript with accessible dialogs, fast task entry, and theme persistence |
+| Testing and CI | Isolated behavior checks plus GitHub Actions verification against a real PostgreSQL service |
+| DevOps | Environment-based configuration, database migrations, health checks, and declarative Render infrastructure |
 
 ## Technology Stack
 
-- Python 3.11+
-- FastAPI and Uvicorn
-- PostgreSQL and psycopg
-- SQLAlchemy 2.x and Alembic
+- Python 3.11+, FastAPI, Uvicorn, and Pydantic
+- PostgreSQL, SQLAlchemy 2.x, Alembic, and psycopg
 - Apache Kafka and confluent-kafka
-- Pydantic
 - HTML, CSS, and JavaScript
-- Python standard-library SMTP client
+- SMTP with STARTTLS
+- GitHub Actions and Render Blueprints
 
 ## Project Structure
 
 ```text
 app/
-  api/                 Daily-task, scheduled-task, preference, and job endpoints
+  api/                 Task, routine, preference, and job endpoints
   services/            Email delivery
   static/              Connected web interface
+  auth.py              Login and signed-session verification
   database.py          Engine and session management
   models.py            Relational models and constraints
   schemas.py           API validation and serialization
@@ -102,142 +73,97 @@ messaging/             Kafka publisher and topic setup
 scheduler/             Due-work detection and publishing
 worker/                Consumer loop and job handlers
 tests/                 Runnable isolated checks
+render.yaml            Render web service and PostgreSQL Blueprint
 ```
 
 ## Local Setup
 
-### 1. Create the virtual environment
+### 1. Install
 
 ```powershell
 python -m venv .venv
 & ".\.venv\Scripts\python.exe" -m pip install -r requirements.txt
-```
-
-Using the virtual environment's Python directly avoids PowerShell activation-policy and path-escaping issues.
-
-### 2. Configure PostgreSQL
-
-Create a PostgreSQL database and application user, then copy the environment template:
-
-```powershell
 Copy-Item .env.example .env
 ```
 
-Set `DATABASE_URL` in `.env`. For a PostgreSQL server on port `5433`:
+Using the virtual environment's Python directly avoids PowerShell activation-policy issues.
+
+### 2. Configure
+
+Set PostgreSQL and authentication values in `.env`:
 
 ```env
 DATABASE_URL=postgresql+psycopg://dayflow_app:your_password@localhost:5433/dayflow
+APP_USERNAME=admin
+APP_PASSWORD=choose_a_strong_password
+SESSION_SECRET=generate_a_long_random_value
+COOKIE_SECURE=false
 ```
 
-Apply all migrations:
+Generate a session secret in PowerShell:
+
+```powershell
+[Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+```
+
+Apply the schema:
 
 ```powershell
 & ".\.venv\Scripts\alembic.exe" upgrade head
-& ".\.venv\Scripts\alembic.exe" current
 ```
 
-### 3. Configure email delivery
+Optional SMTP settings are documented in `.env.example`. For Gmail, use an App Password rather than the account password.
 
-For Gmail, use a Google App Password rather than the account password:
-
-```env
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USERNAME=your_address@gmail.com
-SMTP_PASSWORD=your_app_password
-SMTP_FROM=your_address@gmail.com
-SMTP_STARTTLS=true
-```
-
-Set the recipient through the web preferences panel. Without `SMTP_HOST`, emails print to the worker terminal instead of leaving the machine.
-
-### 4. Start Kafka
-
-Start a local Kafka broker at the address configured by `KAFKA_BOOTSTRAP_SERVERS`, then create the required topics:
-
-```powershell
-& ".\.venv\Scripts\python.exe" -m messaging.setup_kafka
-```
-
-The setup command creates `productivity-jobs`, `productivity-jobs-retry`, and `productivity-jobs-dead` with three partitions each.
-
-## Run Dailyflow
-
-Use separate PowerShell terminals.
-
-### API and frontend
+### 3. Run
 
 ```powershell
 & ".\.venv\Scripts\python.exe" -m uvicorn app.main:app --reload
 ```
 
-Open `http://127.0.0.1:8000` for Dailyflow or `http://127.0.0.1:8000/docs` for the interactive API documentation.
-
-### Scheduler
+Open `http://127.0.0.1:8000`. For background delivery, start Kafka and run these commands in separate terminals:
 
 ```powershell
+& ".\.venv\Scripts\python.exe" -m messaging.setup_kafka
 & ".\.venv\Scripts\python.exe" -m scheduler.scheduler
-```
-
-To inspect due work without Kafka:
-
-```powershell
-& ".\.venv\Scripts\python.exe" -m scheduler.scheduler --print-only --once
-```
-
-### Worker
-
-```powershell
 & ".\.venv\Scripts\python.exe" -m worker.worker
 ```
-
-Start the same command in additional terminals to observe Kafka partition assignment across multiple workers.
 
 ## API Surface
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| `POST` | `/tasks` | Create a task |
-| `GET` | `/tasks` | List tasks |
-| `GET` | `/tasks/{id}` | Retrieve one task |
-| `PATCH` | `/tasks/{id}` | Update or complete a task |
-| `DELETE` | `/tasks/{id}` | Delete a task |
-| `GET` | `/preferences` | Read application preferences |
-| `PATCH` | `/preferences` | Update email, timezone, or schedules |
-| `GET` | `/jobs` | Inspect background jobs |
-| `GET` | `/jobs/{job_id}` | Inspect one job and its failure details |
-| `GET` | `/daily-tasks` | List recurring daily routines and completion history |
-| `POST` | `/daily-tasks` | Create a recurring daily routine |
-| `PUT` | `/daily-tasks/{id}/today` | Set today's completion state |
-| `DELETE` | `/daily-tasks/{id}` | Delete a daily routine |
+| `POST` | `/auth/login` | Start an authenticated session |
+| `POST` | `/auth/logout` | End the current session |
+| `GET` | `/auth/me` | Read the authenticated identity |
+| `POST`, `GET` | `/tasks` | Create and list scheduled tasks |
+| `GET`, `PATCH`, `DELETE` | `/tasks/{id}` | Retrieve, update, complete, or delete a task |
+| `GET`, `PATCH` | `/preferences` | Read or update application preferences |
+| `GET` | `/jobs`, `/jobs/{job_id}` | Inspect background-job state |
+| `GET`, `POST` | `/daily-tasks` | List or create recurring routines |
+| `PUT` | `/daily-tasks/{id}/today` | Set today's routine completion |
+| `DELETE` | `/daily-tasks/{id}` | Delete a recurring routine |
 
-Example task request:
+All application endpoints except login are protected by the session cookie. API timestamps must include an offset; PostgreSQL stores them as timezone-aware UTC values.
 
-```json
-{
-  "title": "Study Kafka consumer groups",
-  "description": "Review partitions, offsets, and rebalancing",
-  "priority": "HIGH",
-  "due_at": "2026-08-23T21:00:00+05:30",
-  "reminder_at": "2026-08-23T20:00:00+05:30"
-}
-```
+## Deploy to Render
 
-API timestamps must include an offset. Daily summaries use the user's local calendar day, and weekly summaries use the previous Monday-to-Monday interval. Both ranges are converted to UTC before PostgreSQL queries.
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/rajeev8008/Dayflow)
+
+The Blueprint provisions the FastAPI web service and PostgreSQL database, runs migrations at startup, generates `SESSION_SECRET`, and asks for `APP_USERNAME` and `APP_PASSWORD`. After creation, Render provides the public `onrender.com` URL.
+
+The web application, authentication, tasks, routines, preferences, and tracker run in this deployment. Scheduled email delivery additionally requires a reachable Kafka broker, SMTP secrets, and separate scheduler and worker processes; those are intentionally not provisioned by the free web Blueprint.
 
 ## Verification
 
-Run the isolated checks:
-
 ```powershell
+& ".\.venv\Scripts\python.exe" -m compileall -q app messaging scheduler worker tests
 & ".\.venv\Scripts\python.exe" -m tests.test_phase1
 & ".\.venv\Scripts\python.exe" -m tests.test_preferences
 & ".\.venv\Scripts\python.exe" -m tests.test_background
+& ".\.venv\Scripts\python.exe" -m tests.test_daily_tasks
+& ".\.venv\Scripts\python.exe" -m tests.test_auth
 & ".\.venv\Scripts\alembic.exe" check
 ```
-
-The background check disables SMTP and uses an in-memory database, so test addresses cannot generate real outbound email.
-
 
 ## Author
 

@@ -131,6 +131,7 @@ FastAPI is the user-facing backend.
 
 Responsibilities:
 
+- authenticate the configured application user with a signed, expiring session cookie
 - create tasks
 - list tasks
 - update tasks
@@ -215,7 +216,7 @@ status
 priority
 due_at
 reminder_at
-reminder_processed_at (added in Phase 3)
+reminder_processed_at
 created_at
 completed_at
 ```
@@ -822,7 +823,7 @@ next_weekly_summary_at
 reminder_processed_at
 ```
 
-Phase 3 uses only `reminder_processed_at` to stop a reminder being detected repeatedly. Phase 12 adds the broader claim/idempotency behavior and periodic `next_*` state needed for Kafka publishing and consumption.
+`reminder_processed_at` stops a reminder being detected repeatedly. Periodic `next_*` state, unique occurrence keys, and terminal job states provide the broader claim and idempotency behavior required for Kafka publishing and consumption.
 
 ---
 
@@ -833,6 +834,7 @@ dayflow/
 |
 ├── app/
 │   ├── main.py
+│   ├── auth.py
 │   ├── database.py
 │   ├── models.py
 │   ├── schemas.py
@@ -864,7 +866,7 @@ dayflow/
 |
 ├── requirements.txt
 ├── README.md
-├── PHASES.md
+├── render.yaml
 └── ARCHITECTURE.md
 ```
 
@@ -957,8 +959,6 @@ Prometheus
 Grafana
 Redis
 microservices
-cloud infrastructure
-authentication
 LLMs
 complex event-driven architecture
 generic workflow engines
