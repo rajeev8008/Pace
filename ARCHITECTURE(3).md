@@ -22,7 +22,11 @@ The system should remain simple and local-first while the project is being learn
 ```text
                          User
                           |
-                          | HTTP
+                          v
+                  +----------------+
+                  | Dailyflow Web  |
+                  +-------+--------+
+                          | HTTP/JSON
                           v
                      +----------+
                      | FastAPI  |
@@ -115,7 +119,13 @@ scheduled background execution
 
 # 3. Component Responsibilities
 
-## 3.1 FastAPI
+## 3.1 Web Frontend
+
+FastAPI serves a responsive, dependency-free HTML, CSS, and JavaScript interface. It separates recurring daily routines from one-time scheduled tasks, provides preference editing and a persistent light/dark theme, and renders a 12-week completion tracker from both completion sources.
+
+The frontend calls the REST API and never accesses PostgreSQL directly.
+
+## 3.2 FastAPI
 
 FastAPI is the user-facing backend.
 
@@ -129,7 +139,8 @@ Responsibilities:
 - save reminder times
 - save daily digest preferences
 - save weekly summary preferences
-- expose job status later
+- expose job status
+- serve the web frontend
 
 FastAPI should not:
 
@@ -161,7 +172,7 @@ HTTP response
 
 ---
 
-# 3.2 PostgreSQL
+## 3.3 PostgreSQL
 
 PostgreSQL is the source of application state for Dayflow.
 
@@ -181,20 +192,17 @@ It stores:
 Tasks
 Preferences
 Scheduled timestamps
-Job records later
+Job records
 ```
 
-Initial logical tables:
+Core tables:
 
 ```text
 tasks
 preferences
-```
-
-Later:
-
-```text
 jobs
+daily_tasks
+daily_task_completions
 ```
 
 Suggested `tasks` fields:
@@ -231,7 +239,7 @@ PostgreSQL gives Dayflow a strong relational backend while keeping the project f
 
 ---
 
-# 3.3 Scheduler
+## 3.4 Scheduler
 
 The scheduler is a separate Python process.
 
@@ -289,13 +297,15 @@ This keeps scheduling and execution separate.
 
 Kafka sits between the scheduler and workers.
 
-Topic:
+Topics:
 
 ```text
 productivity-jobs
+productivity-jobs-retry
+productivity-jobs-dead
 ```
 
-Kafka's responsibility is:
+The main topic distributes new jobs, the retry topic requeues failed work, and the dead-letter topic retains jobs that exhaust three attempts. Kafka's responsibility is:
 
 > Hold and distribute background jobs until workers process them.
 
@@ -549,9 +559,7 @@ Resend
 SendGrid
 ```
 
-Initial development may simply print email contents to the terminal.
-
-Later:
+Without SMTP configuration, email contents print to the terminal. With `SMTP_*` configured, the service sends authenticated SMTP mail with optional STARTTLS:
 
 ```text
 Worker
@@ -686,9 +694,7 @@ Email Service
 
 # 12. Multiple Workers
 
-Initially use one worker.
-
-Later run multiple workers in the same Kafka consumer group:
+Run one or more workers in the same Kafka consumer group:
 
 ```text
                      Kafka
@@ -741,7 +747,7 @@ Dayflow's scheduler exists specifically to support Dayflow features.
 
 # 14. Job Lifecycle
 
-Once job tracking is implemented:
+The implemented lifecycle is:
 
 ```text
              QUEUED
@@ -765,7 +771,7 @@ PostgreSQL stores its state.
 
 # 15. Failure and Retry Architecture
 
-Later phases can introduce:
+The implemented retry topology is:
 
 ```text
 productivity-jobs
@@ -820,7 +826,7 @@ Phase 3 uses only `reminder_processed_at` to stop a reminder being detected repe
 
 ---
 
-# 17. Suggested Project Structure
+# 17. Project Structure
 
 ```text
 dayflow/
@@ -830,20 +836,25 @@ dayflow/
 │   ├── database.py
 │   ├── models.py
 │   ├── schemas.py
+│   ├── static/
+│   │   ├── index.html
+│   │   ├── styles.css
+│   │   └── app.js
 │   |
 │   ├── api/
 │   │   ├── tasks.py
+│   │   ├── jobs.py
 │   │   └── preferences.py
 │   |
 │   └── services/
-│       ├── task_service.py
 │       └── email_service.py
 |
 ├── scheduler/
 │   └── scheduler.py
 |
 ├── messaging/
-│   └── kafka_producer.py
+│   ├── kafka.py
+│   └── setup_kafka.py
 |
 ├── worker/
 │   ├── worker.py
@@ -863,7 +874,7 @@ Do not create layers that are not needed yet.
 
 # 18. Processes Running Locally
 
-Eventually the developer runs three main processes:
+The developer runs three application processes:
 
 ## Terminal 1
 
@@ -901,7 +912,7 @@ Example:
 python -m worker.worker
 ```
 
-Kafka runs separately.
+Kafka runs separately. Create the three required topics with `python -m messaging.setup_kafka`.
 
 Later, multiple workers can be started from additional terminals.
 
@@ -962,6 +973,9 @@ These can be considered later only if Dayflow develops a real requirement for th
 Every component must answer a concrete question.
 
 ```text
+Web Frontend
+"How does the user interact with Dailyflow?"
+
 FastAPI
 "What does the user want?"
 
