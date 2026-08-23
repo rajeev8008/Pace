@@ -35,6 +35,15 @@ def update_preferences(
     preferences = get_preferences(db)
     for field, value in changes.items():
         setattr(preferences, field, value)
+    if changes.keys() & {"timezone", "daily_digest_enabled", "daily_digest_time"}:
+        preferences.next_daily_digest_at = None
+    if changes.keys() & {
+        "timezone",
+        "weekly_summary_enabled",
+        "weekly_summary_day",
+        "weekly_summary_time",
+    }:
+        preferences.next_weekly_summary_at = None
     db.commit()
     db.refresh(preferences)
     return preferences

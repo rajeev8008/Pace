@@ -53,6 +53,8 @@ def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)
 
     for field, value in changes.items():
         setattr(task, field, value)
+    if "reminder_at" in changes:
+        task.reminder_processed_at = None
     db.commit()
     db.refresh(task)
     return task
