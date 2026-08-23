@@ -34,7 +34,7 @@
       <div class="focus-heading"><div><p class="section-label">DEEP WORK</p><h2 id="focus-heading">Focus timer</h2></div><strong id="focus-clock">00:00:00</strong></div>
       <form id="focus-form" class="focus-form">
         <input name="category" maxlength="100" placeholder="Focus category" autocomplete="off">
-        <select name="task_id" id="focus-task" aria-label="Link an active task"><option value="">Link an active task</option></select>
+        <select name="daily_task_id" id="focus-task" aria-label="Choose a daily routine"><option value="">Choose a daily routine</option></select>
         <button type="submit">Start focus</button>
       </form>
       <div id="active-focus" class="active-focus" hidden>
@@ -46,6 +46,7 @@
     <section class="panel tracker-panel" data-page="dashboard">
       <div class="tracker-heading"><div><p class="section-label">CONSISTENCY</p><h2>Your flow</h2></div><span>Last 12 weeks</span></div>
       <div class="tracker-scroll"><div id="tracker" class="tracker" aria-label="Task completion tracker"></div></div>
+      <div id="tracker-details" class="tracker-details" hidden></div>
       <div class="legend"><span>Less</span><i></i><i class="level-1"></i><i class="level-2"></i><i class="level-3"></i><span>More</span></div>
     </section>
 
