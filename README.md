@@ -1,204 +1,79 @@
 # Pace
 
-Pace is a full-stack productivity application for daily routines, scheduled tasks, reminders, and email summaries. It pairs a fast, responsive interface with a PostgreSQL-backed FastAPI API and a durable Kafka job pipeline.
+Pace is a single-user productivity app for planning tasks, maintaining daily routines, running focus sessions, and reviewing what was accomplished.
 
 https://github.com/user-attachments/assets/83eb173d-d2cc-4f56-9246-86f045d22fb6
 
-## Features
+## What it does
 
-- Create, retrieve, edit, complete, filter, and delete scheduled tasks
-- Track recurring daily routines that reset each local calendar day
-- Run one active focus timer on a dedicated, simplified Focus page and link it to a task
-- Edit or delete timeline entries for completed tasks, routines, and focus sessions
-- Link GitHub and LeetCode profiles and import public commits and accepted submissions into Activity
-- Visualize 12 weeks of completed work in a GitHub-style activity tracker
-- Configure timezone-aware reminders, daily digests, and weekly summaries
-- Sign in with a password, GitHub, or Google while retaining signed, HttpOnly application sessions
-- Switch between responsive light and dark themes
-- Distribute background jobs through Kafka with retries and dead-letter handling
-
-## Implementation Summary
-
-| Area | Current implementation |
-|---|---|
-| Identity | Single-owner account with `scrypt` password hashing, GitHub and Google OAuth, verified-email account linking, CSRF state validation, and signed HttpOnly session cookies |
-| Planning | Full scheduled-task CRUD, priorities, UTC due/reminder timestamps, daily routines with local-day completion state, and one active focus timer |
-| Activity | Editable records for completed tasks, routines, and focus sessions plus deduplicated GitHub events and LeetCode accepted submissions |
-| Integrations | Public GitHub and LeetCode profile linking, 30-second near-live refresh, repository details, LeetCode problem numbers, and an optional GitHub sync token for reliable API capacity |
-| Analytics | Three scrollable daily activity feeds and a 12-week consistency graph showing task details, commit totals and repositories, and solved-problem totals and numbers |
-| Scheduling | Separate scheduler detects reminders and digest occurrences using local calendar boundaries converted to UTC |
-| Messaging | Kafka topics for primary, retry, and dead-letter work using the `dayflow-workers` consumer group and bounded three-attempt processing |
-| Delivery | SMTP reminders, daily digests, and Monday-to-Monday weekly summaries with persisted job lifecycle state |
-| Operations | Alembic migrations, PostgreSQL constraints and indexes, environment-managed secrets, GitHub Actions checks, and a Render Blueprint |
+- Full CRUD for scheduled tasks with priorities, due dates, and reminders
+- Daily routines that reset according to the configured timezone
+- A dedicated focus timer linked to a routine
+- Editable activity history and a 12-week consistency tracker
+- GitHub commit, pull-request, and repository activity synchronization
+- LeetCode accepted-submission synchronization
+- Repository-grouped daily commit counts with latest activity times
+- Daily digests, weekly summaries, and reminders over SMTP
+- Password, GitHub, and Google sign-in using signed HttpOnly sessions
+- Responsive light and dark interfaces
 
 ## Architecture
 
 ```mermaid
-flowchart TB
-    User([User]) --> Web[Web interface]
-    Web --> API[FastAPI]
-    OAuth[GitHub / Google] --> API
+flowchart LR
+    UI[Web UI] --> API[FastAPI]
     API --> DB[(PostgreSQL)]
-    DB --> Scheduler[Scheduler]
-    Scheduler --> Kafka[Kafka]
-    Kafka --> Worker[Workers]
-    Worker --> Email[Email delivery]
-    Email --> User
+    API --> GH[GitHub / LeetCode]
+    DB --> Scheduler
+    Scheduler --> Kafka
+    Kafka --> Worker
+    Worker --> SMTP[Email]
 ```
 
-FastAPI handles synchronous user requests, PostgreSQL is the source of truth, the scheduler detects due work, Kafka distributes it, and workers execute reminders and summaries independently of the request path. See [ARCHITECTURE.md](ARCHITECTURE.md) for the detailed design.
+FastAPI serves the dependency-free frontend and REST API. PostgreSQL stores UTC timestamps and application state. A separate scheduler publishes due jobs to Kafka; workers process reminders and summaries with bounded retries and dead-letter routing. See [ARCHITECTURE.md](ARCHITECTURE.md) for details.
 
-## Software Engineering Skills Demonstrated
+## Stack
 
-| Skill | How Pace demonstrates it |
-|---|---|
-| Backend engineering | Modular FastAPI routers, Pydantic validation, explicit response models, and RESTful CRUD semantics |
-| Database engineering | SQLAlchemy 2.x models, PostgreSQL constraints, UTC `TIMESTAMPTZ` data, and versioned Alembic migrations |
-| Security engineering | Salted `scrypt` password hashing, verified-email OAuth linking, CSRF state validation, signed expiring sessions, HttpOnly and SameSite cookies, and environment-managed secrets |
-| Distributed systems | Kafka producers and consumers, partition-based parallelism, and the shared `dayflow-workers` consumer group |
-| Reliability engineering | Persisted job states, manual offset commits, bounded retries, dead-letter routing, row locking, and idempotency controls |
-| Time correctness | IANA timezone preferences and local daily and Monday-to-Monday weekly boundaries converted to UTC before queries |
-| Frontend engineering | Responsive dependency-free HTML, CSS, and JavaScript with accessible dialogs, fast task entry, and theme persistence |
-| Testing and CI | Isolated behavior checks plus GitHub Actions verification against a real PostgreSQL service |
-| DevOps | Environment-based configuration, database migrations, health checks, and declarative Render infrastructure |
+Python, FastAPI, PostgreSQL, SQLAlchemy, Alembic, Apache Kafka, Pydantic, HTML, CSS, JavaScript, SMTP, GitHub Actions, and Render.
 
-## Technology Stack
+## Local setup
 
-- Python 3.11+, FastAPI, Uvicorn, and Pydantic
-- PostgreSQL, SQLAlchemy 2.x, Alembic, and psycopg
-- Apache Kafka and confluent-kafka
-- HTML, CSS, and JavaScript
-- SMTP with STARTTLS
-- GitHub Actions and Render Blueprints
-
-## Project Structure
-
-```text
-app/
-  api/                 Task, routine, focus, preference, and job endpoints
-  services/            Email delivery
-  static/              Connected web interface
-  auth.py              Login and signed-session verification
-  database.py          Engine and session management
-  models.py            Relational models and constraints
-  schemas.py           API validation and serialization
-alembic/               Database migrations
-messaging/             Kafka publisher and topic setup
-scheduler/             Due-work detection and publishing
-worker/                Consumer loop and job handlers
-tests/                 Runnable isolated checks
-render.yaml            Render web service and PostgreSQL Blueprint
-```
-
-## Local Setup
-
-### 1. Install
+Requirements: Python 3.11+, PostgreSQL, and Kafka.
 
 ```powershell
 python -m venv .venv
 & ".\.venv\Scripts\python.exe" -m pip install -r requirements.txt
 Copy-Item .env.example .env
-```
-
-Using the virtual environment's Python directly avoids PowerShell activation-policy issues.
-
-### 2. Configure
-
-Set PostgreSQL and session values in `.env`:
-
-```env
-DATABASE_URL=postgresql+psycopg://dayflow_app:your_password@localhost:5433/dayflow
-SESSION_SECRET=generate_a_long_random_value
-COOKIE_SECURE=false
-OAUTH_BASE_URL=http://127.0.0.1:8000
-GITHUB_CLIENT_ID=
-GITHUB_CLIENT_SECRET=
-GITHUB_SYNC_TOKEN=
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-```
-
-Generate a session secret in PowerShell:
-
-```powershell
-[Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
-```
-
-Apply the schema:
-
-```powershell
 & ".\.venv\Scripts\alembic.exe" upgrade head
 ```
 
-Optional SMTP settings are documented in `.env.example`. For Gmail, use an App Password rather than the account password.
+Configure `.env` with PostgreSQL, a strong `SESSION_SECRET`, and any OAuth, GitHub sync, or SMTP credentials you use. Gmail requires an App Password.
 
-### 3. Run
+Run the application and background services in separate terminals:
 
 ```powershell
 & ".\.venv\Scripts\python.exe" -m uvicorn app.main:app --reload
-```
-
-Open `http://127.0.0.1:8000`. For background delivery, start Kafka and run these commands in separate terminals:
-
-```powershell
 & ".\.venv\Scripts\python.exe" -m messaging.setup_kafka
 & ".\.venv\Scripts\python.exe" -m scheduler.scheduler
 & ".\.venv\Scripts\python.exe" -m worker.worker
 ```
 
-## API Surface
+Open `http://127.0.0.1:8000`.
 
-| Method | Endpoint | Purpose |
-|---|---|---|
-| `POST` | `/auth/signup` | Create the single owner account on first use |
-| `POST` | `/auth/login` | Start an authenticated session |
-| `POST` | `/auth/logout` | End the current session |
-| `GET` | `/auth/me` | Read the authenticated identity |
-| `GET` | `/auth/oauth/{provider}` | Start GitHub or Google OAuth |
-| `GET` | `/auth/oauth/{provider}/callback` | Verify OAuth identity and start a signed session |
-| `GET` | `/auth/oauth-providers` | Report which OAuth providers are configured |
-| `POST`, `GET` | `/tasks` | Create and list scheduled tasks |
-| `GET`, `PATCH`, `DELETE` | `/tasks/{id}` | Retrieve, update, complete, or delete a task |
-| `GET`, `PATCH` | `/preferences` | Read or update application preferences |
-| `GET` | `/jobs`, `/jobs/{job_id}` | Inspect background-job state |
-| `GET`, `POST` | `/daily-tasks` | List or create recurring routines |
-| `PUT` | `/daily-tasks/{id}/today` | Set today's routine completion |
-| `DELETE` | `/daily-tasks/{id}` | Delete a recurring routine |
-| `POST` | `/focus-sessions/start` | Start the focus timer |
-| `POST` | `/focus-sessions/{id}/stop` | Stop and persist elapsed time |
-| `GET` | `/focus-sessions` | List focus-session history |
-| `GET` | `/focus-sessions/active` | Read the active focus session |
-| `GET` | `/activities/today` | List today's editable accomplishments |
-| `GET` | `/activities/recent?days=84` | Read bounded activity history for consistency analytics |
-| `PATCH`, `DELETE` | `/activities/{id}` | Edit or remove a timeline entry |
-| `GET`, `POST` | `/profiles` | List or link GitHub and LeetCode profiles |
-| `POST` | `/profiles/{id}/sync` | Import recent public profile activity |
-| `DELETE` | `/profiles/{id}` | Disconnect a profile |
-
-All application endpoints except sign-up and login are protected by the session cookie. API timestamps must include an offset; PostgreSQL stores them as timezone-aware UTC values.
-
-## Deploy to Render
+## Deployment
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/rajeev8008/Pace)
 
-The Blueprint provisions the FastAPI web service and PostgreSQL database, runs migrations at startup, and generates `SESSION_SECRET`. Create the private owner account from the sign-up option on first use. After creation, Render provides the public `onrender.com` URL.
-
-The web application, authentication, tasks, routines, preferences, and tracker run in this deployment. Scheduled email delivery additionally requires a reachable Kafka broker, SMTP secrets, and separate scheduler and worker processes; those are intentionally not provisioned by the free web Blueprint.
+The included Blueprint provisions the web service and PostgreSQL. Complete background email delivery also requires an always-on scheduler and worker, a reachable Kafka broker, and configured `SMTP_*` secrets.
 
 ## Verification
 
+GitHub Actions applies migrations, checks for schema drift, compiles the project, and runs the isolated behavior checks. Run the same checks locally with:
+
 ```powershell
-& ".\.venv\Scripts\python.exe" -m compileall -q app messaging scheduler worker tests
-& ".\.venv\Scripts\python.exe" -m tests.test_phase1
-& ".\.venv\Scripts\python.exe" -m tests.test_preferences
-& ".\.venv\Scripts\python.exe" -m tests.test_background
-& ".\.venv\Scripts\python.exe" -m tests.test_daily_tasks
-& ".\.venv\Scripts\python.exe" -m tests.test_auth
-& ".\.venv\Scripts\python.exe" -m tests.test_focus_sessions
-& ".\.venv\Scripts\python.exe" -m tests.test_activities
-& ".\.venv\Scripts\python.exe" -m tests.test_oauth
-& ".\.venv\Scripts\python.exe" -m tests.test_profiles
 & ".\.venv\Scripts\alembic.exe" check
+& ".\.venv\Scripts\python.exe" -m compileall -q app messaging scheduler worker tests
+Get-ChildItem tests\test_*.py | ForEach-Object { & ".\.venv\Scripts\python.exe" -m "tests.$($_.BaseName)" }
 ```
 
 ## Author
@@ -207,4 +82,4 @@ Developed by **K Rajeev**.
 
 ## License
 
-Pace is available under the [MIT License](LICENSE).
+[MIT](LICENSE)
