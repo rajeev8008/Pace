@@ -60,7 +60,7 @@ def main() -> None:
     consumer = Consumer(
         {
             "bootstrap.servers": os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"),
-            "group.id": "dayflow-workers",
+            "group.id": "pace-workers",
             "auto.offset.reset": "earliest",
             "enable.auto.commit": False,
         }
