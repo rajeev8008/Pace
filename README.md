@@ -4,6 +4,12 @@ Dailyflow is a local-first productivity application that combines a responsive t
 
 The project demonstrates end-to-end software engineering across API design, relational data modeling, timezone-safe scheduling, asynchronous messaging, concurrency control, retry handling, observability, testing, and frontend integration.
 
+## Demo
+
+<!-- Upload your demo video to GitHub, then replace the placeholder below with the generated video URL. -->
+
+> Dailyflow interface walkthrough video will be added here.
+
 ## Features
 
 - Create, retrieve, update, complete, filter, and delete tasks
@@ -235,28 +241,6 @@ Run the isolated checks:
 ```
 
 The background check disables SMTP and uses an in-memory database, so test addresses cannot generate real outbound email.
-
-## Interview Discussion
-
-### Why separate the scheduler from workers?
-
-Scheduling and execution have different responsibilities. The scheduler detects due work and publishes a durable job; workers perform database queries and external delivery. This keeps slow SMTP calls out of API requests and allows worker capacity to scale independently.
-
-### How are duplicate emails prevented?
-
-Task reminders receive a `reminder_processed_at` timestamp when claimed. Periodic schedules store their next UTC execution time. Jobs also carry a unique occurrence key, while workers skip terminal jobs. PostgreSQL row locks protect scheduler claims when processes overlap.
-
-### Why store UTC while accepting a user timezone?
-
-UTC removes ambiguity from persistence and comparisons. User-facing schedules remain meaningful because Dailyflow constructs local calendar boundaries in the configured IANA timezone and converts those boundaries to UTC for querying.
-
-### What happens when email delivery fails?
-
-The worker records the error and attempt count, republishes the job to the retry topic, and commits Kafka offsets manually after processing. After three failures, the job becomes `FAILED` and is published to the dead-letter topic for inspection.
-
-### How does horizontal scaling work?
-
-The main topic has three partitions. Workers in the shared `dayflow-workers` consumer group receive partition assignments, so each message is handled by one group member rather than every worker.
 
 ## Scope and Tradeoffs
 
