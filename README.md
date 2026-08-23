@@ -10,11 +10,26 @@ https://github.com/user-attachments/assets/83eb173d-d2cc-4f56-9246-86f045d22fb6
 - Track recurring daily routines that reset each local calendar day
 - Run one active focus timer on a dedicated, simplified Focus page and link it to a task
 - Edit or delete timeline entries for completed tasks, routines, and focus sessions
+- Link GitHub and LeetCode profiles and import public commits and accepted submissions into Activity
 - Visualize 12 weeks of completed work in a GitHub-style activity tracker
 - Configure timezone-aware reminders, daily digests, and weekly summaries
 - Sign in with a password, GitHub, or Google while retaining signed, HttpOnly application sessions
 - Switch between responsive light and dark themes
 - Distribute background jobs through Kafka with retries and dead-letter handling
+
+## Implementation Summary
+
+| Area | Current implementation |
+|---|---|
+| Identity | Single-owner account with `scrypt` password hashing, GitHub and Google OAuth, verified-email account linking, CSRF state validation, and signed HttpOnly session cookies |
+| Planning | Full scheduled-task CRUD, priorities, UTC due/reminder timestamps, daily routines with local-day completion state, and one active focus timer |
+| Activity | Editable records for completed tasks, routines, and focus sessions plus deduplicated GitHub events and LeetCode accepted submissions |
+| Integrations | Public GitHub and LeetCode profile linking, 30-second near-live refresh, repository details, LeetCode problem numbers, and an optional GitHub sync token for reliable API capacity |
+| Analytics | Three scrollable daily activity feeds and a 12-week consistency graph showing task details, commit totals and repositories, and solved-problem totals and numbers |
+| Scheduling | Separate scheduler detects reminders and digest occurrences using local calendar boundaries converted to UTC |
+| Messaging | Kafka topics for primary, retry, and dead-letter work using the `dayflow-workers` consumer group and bounded three-attempt processing |
+| Delivery | SMTP reminders, daily digests, and Monday-to-Monday weekly summaries with persisted job lifecycle state |
+| Operations | Alembic migrations, PostgreSQL constraints and indexes, environment-managed secrets, GitHub Actions checks, and a Render Blueprint |
 
 ## Architecture
 
@@ -98,6 +113,7 @@ COOKIE_SECURE=false
 OAUTH_BASE_URL=http://127.0.0.1:8000
 GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=
+GITHUB_SYNC_TOKEN=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 ```
@@ -140,6 +156,7 @@ Open `http://127.0.0.1:8000`. For background delivery, start Kafka and run these
 | `GET` | `/auth/me` | Read the authenticated identity |
 | `GET` | `/auth/oauth/{provider}` | Start GitHub or Google OAuth |
 | `GET` | `/auth/oauth/{provider}/callback` | Verify OAuth identity and start a signed session |
+| `GET` | `/auth/oauth-providers` | Report which OAuth providers are configured |
 | `POST`, `GET` | `/tasks` | Create and list scheduled tasks |
 | `GET`, `PATCH`, `DELETE` | `/tasks/{id}` | Retrieve, update, complete, or delete a task |
 | `GET`, `PATCH` | `/preferences` | Read or update application preferences |
@@ -152,13 +169,17 @@ Open `http://127.0.0.1:8000`. For background delivery, start Kafka and run these
 | `GET` | `/focus-sessions` | List focus-session history |
 | `GET` | `/focus-sessions/active` | Read the active focus session |
 | `GET` | `/activities/today` | List today's editable accomplishments |
+| `GET` | `/activities/recent?days=84` | Read bounded activity history for consistency analytics |
 | `PATCH`, `DELETE` | `/activities/{id}` | Edit or remove a timeline entry |
+| `GET`, `POST` | `/profiles` | List or link GitHub and LeetCode profiles |
+| `POST` | `/profiles/{id}/sync` | Import recent public profile activity |
+| `DELETE` | `/profiles/{id}` | Disconnect a profile |
 
 All application endpoints except sign-up and login are protected by the session cookie. API timestamps must include an offset; PostgreSQL stores them as timezone-aware UTC values.
 
 ## Deploy to Render
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/rajeev8008/Dayflow)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/rajeev8008/Pace)
 
 The Blueprint provisions the FastAPI web service and PostgreSQL database, runs migrations at startup, and generates `SESSION_SECRET`. Create the private owner account from the sign-up option on first use. After creation, Render provides the public `onrender.com` URL.
 
@@ -176,6 +197,7 @@ The web application, authentication, tasks, routines, preferences, and tracker r
 & ".\.venv\Scripts\python.exe" -m tests.test_focus_sessions
 & ".\.venv\Scripts\python.exe" -m tests.test_activities
 & ".\.venv\Scripts\python.exe" -m tests.test_oauth
+& ".\.venv\Scripts\python.exe" -m tests.test_profiles
 & ".\.venv\Scripts\alembic.exe" check
 ```
 

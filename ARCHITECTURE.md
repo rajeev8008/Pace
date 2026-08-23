@@ -122,7 +122,7 @@ scheduled background execution
 
 ## 3.1 Web Frontend
 
-FastAPI serves a responsive, dependency-free HTML, CSS, and JavaScript interface. It separates recurring daily routines from one-time scheduled tasks, provides a dedicated start/stop focus page, an editable accomplishment timeline, account and OAuth controls, preference editing, a persistent light/dark theme, and a 12-week completion tracker.
+FastAPI serves a responsive, dependency-free HTML, CSS, and JavaScript interface. It separates recurring daily routines from one-time scheduled tasks, provides a dedicated start/stop focus page, three scrollable daily activity feeds, GitHub and LeetCode profile connections, account and OAuth controls, preference editing, a persistent light/dark theme, and a 12-week consistency tracker.
 
 The frontend calls the REST API and never accesses PostgreSQL directly.
 
@@ -217,6 +217,8 @@ activities
 `focus_sessions` stores optional category, linked task, notes, UTC start and end timestamps, and the server-calculated duration. A unique nullable active marker permits any number of completed rows but only one row whose timer is active.
 
 `activities` stores editable timeline entries produced when a task, daily routine, or focus session is completed. Editing or deleting an activity does not mutate its source record; future integrations such as GitHub sync can write to the same timeline.
+
+`external_profiles` stores one public GitHub profile and one public LeetCode profile. The dashboard refreshes connected profiles every 30 seconds and when the tab becomes visible, importing deduplicated public events into `activities`. GitHub entries retain repository details and commit counts; LeetCode entries retain accepted-submission timestamps, problem numbers, and titles. The daily feeds query only the configured local calendar day, while the consistency tracker uses a bounded 84-day history query. GitHub can use an environment-managed `GITHUB_SYNC_TOKEN`; OAuth access tokens are not persisted in PostgreSQL.
 
 Suggested `tasks` fields:
 
