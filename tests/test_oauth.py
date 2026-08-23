@@ -1,15 +1,18 @@
 import os
+from unittest.mock import patch
 
 os.environ["DATABASE_URL"] = "sqlite://"
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.auth import _oauth_owner
+from app.auth import _oauth_owner, oauth_providers
 from app.database import Base, engine
 
 
 def run_checks() -> None:
+    with patch.dict(os.environ, {"GITHUB_CLIENT_ID": "", "GITHUB_CLIENT_SECRET": "", "GOOGLE_CLIENT_ID": "", "GOOGLE_CLIENT_SECRET": ""}):
+        assert oauth_providers() == {"github": False, "google": False}
     Base.metadata.create_all(engine)
     with Session(engine) as db:
         owner = _oauth_owner(db, "github", "123", "owner@example.com", "Owner", "owner")

@@ -19,7 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import User
+from app.models import ExternalProfile, User
 
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -128,7 +128,7 @@ def _set_session(response: Response, user: User) -> dict[str, str | None]:
 
 
 def _oauth_url(request: Request, provider: str) -> str:
-    base = os.getenv("OAUTH_BASE_URL", "").rstrip("/")
+    base = os.getenv("OAUTH_BASE_URL", "").rstrip("/") or (f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}" if os.getenv("RENDER_EXTERNAL_HOSTNAME") else "")
     return f"{base}/auth/oauth/{provider}/callback" if base else str(request.url_for("oauth_callback", provider=provider))
 
 
@@ -193,6 +193,12 @@ def oauth_callback(provider: str, request: Request, code: str, state: str, db: S
         if not token or not verified:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "GitHub did not provide a verified email")
         user = _oauth_owner(db, provider, str(profile["id"]), verified, profile.get("name") or profile["login"], profile["login"])
+        connection = db.scalar(select(ExternalProfile).where(ExternalProfile.provider == "GITHUB"))
+        if connection is None:
+            db.add(ExternalProfile(provider="GITHUB", username=profile["login"], profile_url=profile["html_url"]))
+        else:
+            connection.username, connection.profile_url = profile["login"], profile["html_url"]
+        db.commit()
     else:
         token_data = _request_json("https://oauth2.googleapis.com/token", data={"client_id": _setting("GOOGLE_CLIENT_ID"), "client_secret": _setting("GOOGLE_CLIENT_SECRET"), "code": code, "grant_type": "authorization_code", "redirect_uri": redirect_uri})
         token = token_data.get("access_token")
@@ -206,6 +212,14 @@ def oauth_callback(provider: str, request: Request, code: str, state: str, db: S
     response.delete_cookie(OAUTH_STATE_COOKIE)
     _set_session(response, user)
     return response
+
+
+@router.get("/oauth-providers")
+def oauth_providers() -> dict[str, bool]:
+    return {
+        "github": bool(os.getenv("GITHUB_CLIENT_ID") and os.getenv("GITHUB_CLIENT_SECRET")),
+        "google": bool(os.getenv("GOOGLE_CLIENT_ID") and os.getenv("GOOGLE_CLIENT_SECRET")),
+    }
 
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
