@@ -1,12 +1,21 @@
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
 from typing import Annotated, Self
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
-from app.models import TaskPriority, TaskStatus
+from app.models import TaskPriority, TaskStatus, Weekday
 
 
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+Email = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        max_length=320,
+        pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+    ),
+]
 
 
 def aware_utc(value: datetime | None) -> datetime | None:
@@ -55,3 +64,49 @@ class TaskRead(BaseModel):
     reminder_at: datetime | None
     created_at: datetime
     completed_at: datetime | None
+
+
+class PreferenceUpdate(BaseModel):
+    email: Email | None = None
+    timezone: str | None = Field(default=None, min_length=1, max_length=64)
+    daily_digest_enabled: bool | None = None
+    daily_digest_time: time | None = None
+    weekly_summary_enabled: bool | None = None
+    weekly_summary_day: Weekday | None = None
+    weekly_summary_time: time | None = None
+
+    @field_validator("timezone")
+    @classmethod
+    def timezone_must_exist(cls, value: str | None) -> str | None:
+        if value is not None:
+            try:
+                ZoneInfo(value)
+            except ZoneInfoNotFoundError as error:
+                raise ValueError("unknown IANA timezone") from error
+        return value
+
+    @field_validator("daily_digest_time", "weekly_summary_time")
+    @classmethod
+    def schedule_times_are_local(cls, value: time | None) -> time | None:
+        if value is not None and value.tzinfo is not None:
+            raise ValueError("schedule time must not include a timezone offset")
+        return value
+
+    @model_validator(mode="after")
+    def reject_null_required_fields(self) -> Self:
+        for field in self.model_fields_set - {"email"}:
+            if getattr(self, field) is None:
+                raise ValueError(f"{field} cannot be null")
+        return self
+
+
+class PreferenceRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    email: str | None
+    timezone: str
+    daily_digest_enabled: bool
+    daily_digest_time: time
+    weekly_summary_enabled: bool
+    weekly_summary_day: Weekday
+    weekly_summary_time: time
