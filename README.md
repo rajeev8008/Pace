@@ -1,8 +1,20 @@
 # Pace
 
+[![CI](https://github.com/rajeev8008/Pace/actions/workflows/ci.yml/badge.svg)](https://github.com/rajeev8008/Pace/actions/workflows/ci.yml)
+![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+[![MIT License](https://img.shields.io/badge/License-MIT-2ea44f.svg)](LICENSE)
+
+## Why Pace?
+
 I wanted one honest view of my productivity. My daily routines and scheduled tasks lived in one place, focus time existed only in my head, and the work I did on GitHub and LeetCode was scattered across separate profiles. Pace brings those signals together so I can plan what I intend to do and review what I actually accomplished each day.
 
-Pace is a single-user productivity application for daily routines, one-time tasks, focus sessions, developer activity, consistency tracking, reminders, and email summaries.
+Pace is a personal productivity platform for daily routines, one-time tasks, focus sessions, developer activity, consistency tracking, reminders, and email summaries. It currently runs as an intentionally single-owner application.
+
+### Engineering highlights
+
+- Timezone-correct FastAPI and PostgreSQL application with signed-session authentication and OAuth
+- Durable scheduler → Kafka → worker pipeline with persisted jobs, retries, and dead-letter routing
+- Unified activity model for Pace completions, GitHub development, and LeetCode practice
 
 ## Product tour
 
@@ -31,20 +43,20 @@ https://github.com/user-attachments/assets/83eb173d-d2cc-4f56-9246-86f045d22fb6
 
 GitHub synchronization imports authored commits plus pull requests, issues, releases, and other profile events. Commits are grouped by repository with their count and latest time. LeetCode synchronization imports recent accepted submissions with problem numbers and titles.
 
-## How it works
+## Architecture
 
 ```mermaid
 flowchart LR
     Browser --> API[FastAPI]
     API --> DB[(PostgreSQL)]
-    API --> Profiles[GitHub and LeetCode]
+    API --> External[External APIs: GitHub REST / LeetCode GraphQL]
     DB --> Scheduler
     Scheduler --> Kafka
     Kafka --> Worker
     Worker --> SMTP[Email]
 ```
 
-FastAPI serves the dependency-free frontend and authenticated REST API. PostgreSQL is the source of truth. A separate scheduler claims due reminder and digest work, persists jobs, and publishes them to Kafka. Workers in the `dayflow-workers` consumer group execute jobs, retry failures up to three times, route exhausted jobs to a dead-letter topic, and deliver email through SMTP.
+FastAPI serves the dependency-free frontend and authenticated REST API. PostgreSQL is the source of truth. A separate scheduler claims due reminder and digest work, persists jobs, and publishes them to Kafka. Workers in the `pace-workers` consumer group execute jobs, retry failures up to three times, route exhausted jobs to a dead-letter topic, and deliver email through SMTP.
 
 All stored timestamps are timezone-aware UTC values. Daily and weekly calculations use the configured IANA timezone—`Asia/Kolkata` by default—and convert local calendar boundaries to UTC before querying.
 
@@ -53,6 +65,18 @@ All stored timestamps are timezone-aware UTC values. Daily and weekly calculatio
 Python, FastAPI, Pydantic, PostgreSQL, SQLAlchemy, Alembic, Apache Kafka, confluent-kafka, HTML, CSS, JavaScript, SMTP, GitHub Actions, and Render.
 
 Authentication uses salted `scrypt` password hashes, signed seven-day HttpOnly session cookies, and optional GitHub or Google OAuth. Pace intentionally permits one owner account.
+
+## Project structure
+
+```text
+app/         FastAPI routes, models, services, and frontend
+alembic/     Versioned PostgreSQL migrations
+messaging/   Kafka producer and topic setup
+scheduler/   Due-work detection and job publication
+worker/      Kafka consumer and email handlers
+tests/       Isolated subsystem checks
+render.yaml  Web and PostgreSQL deployment blueprint
+```
 
 ## Local setup
 

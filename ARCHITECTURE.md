@@ -10,7 +10,7 @@ flowchart TB
     UI --> API[FastAPI REST API]
     API --> DB[(PostgreSQL)]
     API --> OAuth[GitHub and Google OAuth]
-    API --> Profiles[GitHub REST and LeetCode GraphQL]
+    API --> External[External APIs: GitHub REST / LeetCode GraphQL]
 
     Scheduler --> DB
     Scheduler --> MainTopic[productivity-jobs]
@@ -103,7 +103,7 @@ Pace creates three three-partition topics:
 | `productivity-jobs-retry` | Jobs awaiting another attempt |
 | `productivity-jobs-dead` | Jobs that exhausted three attempts |
 
-Messages contain the durable job ID, job type, creation timestamp, attempt count, and task ID when applicable. Workers use the `dayflow-workers` consumer group and commit Kafka offsets only after the database-backed processing attempt completes.
+Messages contain the durable job ID, job type, creation timestamp, attempt count, and task ID when applicable. Workers use the `pace-workers` consumer group and commit Kafka offsets only after the database-backed processing attempt completes.
 
 ### Worker and handlers
 
