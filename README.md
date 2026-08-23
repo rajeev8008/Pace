@@ -1,44 +1,62 @@
 # Pace
 
-Pace is a single-user productivity app for planning tasks, maintaining daily routines, running focus sessions, and reviewing what was accomplished.
+I wanted one honest view of my productivity. My daily routines and scheduled tasks lived in one place, focus time existed only in my head, and the work I did on GitHub and LeetCode was scattered across separate profiles. Pace brings those signals together so I can plan what I intend to do and review what I actually accomplished each day.
+
+Pace is a single-user productivity application for daily routines, one-time tasks, focus sessions, developer activity, consistency tracking, reminders, and email summaries.
+
+## Product tour
+
+### Walkthrough
 
 https://github.com/user-attachments/assets/83eb173d-d2cc-4f56-9246-86f045d22fb6
 
-## What it does
+### Interface
 
-- Full CRUD for scheduled tasks with priorities, due dates, and reminders
-- Daily routines that reset according to the configured timezone
-- A dedicated focus timer linked to a routine
-- Editable activity history and a 12-week consistency tracker
-- GitHub commit, pull-request, and repository activity synchronization
-- LeetCode accepted-submission synchronization
-- Repository-grouped daily commit counts with latest activity times
-- Daily digests, weekly summaries, and reminders over SMTP
-- Password, GitHub, and Google sign-in using signed HttpOnly sessions
-- Responsive light and dark interfaces
+<p align="center">
+  <img width="49%" alt="Pace dashboard overview" src="https://github.com/user-attachments/assets/c830e5a2-5f50-4ec8-a02e-629320035f31" />
+  <img width="49%" alt="Pace productivity dashboard" src="https://github.com/user-attachments/assets/58f20227-3584-43e5-8f15-d1d7b92b0d64" />
+</p>
+<p align="center">
+  <img width="49%" alt="Pace activity and consistency view" src="https://github.com/user-attachments/assets/30d5d4e0-bd85-4c4c-96ec-8ca967263418" />
+  <img width="49%" alt="Pace focus experience" src="https://github.com/user-attachments/assets/dbcf1e5e-afb5-4b06-a4e9-2be990bce591" />
+</p>
 
-## Architecture
+## What Pace tracks
+
+- **Daily routines** — repeatable work that resets each local calendar day
+- **Scheduled tasks** — one-time work with priority, due date, and reminder controls
+- **Focus** — one active timer linked to a daily routine
+- **Activity** — completed tasks, routines, focus sessions, GitHub work, and accepted LeetCode submissions
+- **Consistency** — an 84-day contribution-style view with repository commit totals and solved problems
+
+GitHub synchronization imports authored commits plus pull requests, issues, releases, and other profile events. Commits are grouped by repository with their count and latest time. LeetCode synchronization imports recent accepted submissions with problem numbers and titles.
+
+## How it works
 
 ```mermaid
 flowchart LR
-    UI[Web UI] --> API[FastAPI]
+    Browser --> API[FastAPI]
     API --> DB[(PostgreSQL)]
-    API --> GH[GitHub / LeetCode]
+    API --> Profiles[GitHub and LeetCode]
     DB --> Scheduler
     Scheduler --> Kafka
     Kafka --> Worker
     Worker --> SMTP[Email]
 ```
 
-FastAPI serves the dependency-free frontend and REST API. PostgreSQL stores UTC timestamps and application state. A separate scheduler publishes due jobs to Kafka; workers process reminders and summaries with bounded retries and dead-letter routing. See [ARCHITECTURE.md](ARCHITECTURE.md) for details.
+FastAPI serves the dependency-free frontend and authenticated REST API. PostgreSQL is the source of truth. A separate scheduler claims due reminder and digest work, persists jobs, and publishes them to Kafka. Workers in the `dayflow-workers` consumer group execute jobs, retry failures up to three times, route exhausted jobs to a dead-letter topic, and deliver email through SMTP.
+
+All stored timestamps are timezone-aware UTC values. Daily and weekly calculations use the configured IANA timezone—`Asia/Kolkata` by default—and convert local calendar boundaries to UTC before querying.
 
 ## Stack
 
-Python, FastAPI, PostgreSQL, SQLAlchemy, Alembic, Apache Kafka, Pydantic, HTML, CSS, JavaScript, SMTP, GitHub Actions, and Render.
+Python, FastAPI, Pydantic, PostgreSQL, SQLAlchemy, Alembic, Apache Kafka, confluent-kafka, HTML, CSS, JavaScript, SMTP, GitHub Actions, and Render.
+
+Authentication uses salted `scrypt` password hashes, signed seven-day HttpOnly session cookies, and optional GitHub or Google OAuth. Pace intentionally permits one owner account.
 
 ## Local setup
 
-Requirements: Python 3.11+, PostgreSQL, and Kafka.
+Requirements: Python 3.11+, PostgreSQL, Java, and Kafka.
 
 ```powershell
 python -m venv .venv
@@ -47,9 +65,9 @@ Copy-Item .env.example .env
 & ".\.venv\Scripts\alembic.exe" upgrade head
 ```
 
-Configure `.env` with PostgreSQL, a strong `SESSION_SECRET`, and any OAuth, GitHub sync, or SMTP credentials you use. Gmail requires an App Password.
+Configure `.env` with PostgreSQL and a strong `SESSION_SECRET`. Add OAuth, `GITHUB_SYNC_TOKEN`, and `SMTP_*` values only when those integrations are needed. Gmail SMTP requires an App Password.
 
-Run the application and background services in separate terminals:
+Run the web application, then start the background components in separate terminals:
 
 ```powershell
 & ".\.venv\Scripts\python.exe" -m uvicorn app.main:app --reload
@@ -64,11 +82,11 @@ Open `http://127.0.0.1:8000`.
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/rajeev8008/Pace)
 
-The included Blueprint provisions the web service and PostgreSQL. Complete background email delivery also requires an always-on scheduler and worker, a reachable Kafka broker, and configured `SMTP_*` secrets.
+The current Render Blueprint provisions FastAPI and PostgreSQL. A complete always-on deployment of scheduled email also needs a reachable Kafka broker plus continuously running scheduler and worker services with SMTP secrets. See [ARCHITECTURE.md](ARCHITECTURE.md) for the exact runtime boundaries.
 
 ## Verification
 
-GitHub Actions applies migrations, checks for schema drift, compiles the project, and runs the isolated behavior checks. Run the same checks locally with:
+GitHub Actions starts PostgreSQL, applies and checks Alembic migrations, compiles the project, and runs isolated checks for tasks, preferences, scheduling, routines, authentication, OAuth, focus sessions, activities, and profile synchronization.
 
 ```powershell
 & ".\.venv\Scripts\alembic.exe" check

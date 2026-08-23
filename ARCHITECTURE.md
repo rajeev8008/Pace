@@ -1,1015 +1,220 @@
-# Pace — Architecture
+# Pace Architecture
 
-Pace is a personal productivity application that helps a user:
+Pace is an intentionally single-user productivity system. It combines planning, recurring routines, focused work, completed-work history, GitHub activity, LeetCode submissions, and scheduled email without introducing a separate frontend framework or a generic workflow engine.
 
-- create and manage tasks
-- run and record focused-work sessions
-- schedule task reminders
-- receive daily productivity digests
-- receive weekly productivity summaries
+## System context
 
-The main engineering feature of Pace is its background job system:
+```mermaid
+flowchart TB
+    User([Owner]) --> UI[HTML, CSS, JavaScript]
+    UI --> API[FastAPI REST API]
+    API --> DB[(PostgreSQL)]
+    API --> OAuth[GitHub and Google OAuth]
+    API --> Profiles[GitHub REST and LeetCode GraphQL]
 
-```text
-Scheduler -> Kafka -> Workers
+    Scheduler --> DB
+    Scheduler --> MainTopic[productivity-jobs]
+    MainTopic --> Worker[Kafka worker]
+    RetryTopic[productivity-jobs-retry] --> Worker
+    Worker --> DB
+    Worker --> RetryTopic
+    Worker --> DeadTopic[productivity-jobs-dead]
+    Worker --> SMTP[SMTP provider]
+    SMTP --> User
 ```
 
-The system should remain simple and local-first while the project is being learned and built.
+The request path and background path are deliberately separate:
 
----
+- FastAPI handles interactive operations and profile synchronization.
+- The scheduler detects due reminder and digest work.
+- Kafka transports persisted job identifiers.
+- Workers execute email jobs outside HTTP requests.
 
-# 1. High-Level Architecture
+## Runtime components
 
-```text
-                         User
-                          |
-                          v
-                  +----------------+
-                  |    Pace Web    |
-                  +-------+--------+
-                          | HTTP/JSON
-                          v
-                     +----------+
-                     | FastAPI  |
-                     +----+-----+
-                          |
-                          v
-                     +----------+
-                     |  PostgreSQL  |
-                     +----+-----+
-                          ^
-                          |
-                    reads schedules
-                          |
-                     +----+-----+
-                     | Scheduler|
-                     +----+-----+
-                          |
-                          | publish job
-                          v
-                  +------------------+
-                  |      Kafka       |
-                  | productivity-jobs|
-                  +--------+---------+
-                           |
-                           | consume
-                           v
-                  +------------------+
-                  |      Worker      |
-                  +--------+---------+
-                           |
-                 +---------+----------+
-                 |         |          |
-                 v         v          v
-            Reminder    Daily       Weekly
-             Handler    Digest      Summary
-                 \         |          /
-                  \        |         /
-                   +-------+--------+
-                           |
-                           v
-                    +-------------+
-                    |Email Service|
-                    +-------------+
+### Frontend
+
+FastAPI serves a dependency-free single-page interface from `app/static`. It provides:
+
+- dashboard and dedicated focus views
+- fast task and daily-routine entry
+- task editing, completion, filtering, and deletion
+- preference, profile-connection, and account controls
+- three daily activity feeds for Pace, GitHub, and LeetCode activity
+- an 84-day consistency tracker
+- responsive light and dark themes
+
+The browser calls authenticated JSON endpoints. It never accesses PostgreSQL directly.
+
+### FastAPI application
+
+Routers are divided by capability:
+
+| Module | Responsibility |
+|---|---|
+| `auth.py` | Sign-up, login, logout, session verification, GitHub OAuth, and Google OAuth |
+| `tasks.py` | Scheduled-task CRUD and completion activities |
+| `daily_tasks.py` | Recurring routines and local-day completion records |
+| `focus_sessions.py` | Start, stop, list, and read the single active focus timer |
+| `activities.py` | Local-day and recent activity queries plus edit/delete operations |
+| `profiles.py` | GitHub and LeetCode connection and synchronization |
+| `preferences.py` | Email, timezone, and digest schedule settings |
+| `jobs.py` | Background-job inspection |
+
+All application routers except authentication require a valid signed session cookie.
+
+### PostgreSQL
+
+SQLAlchemy 2.x models define the source of truth and Alembic versions `0001` through `0010` evolve the schema.
+
+| Table | Stored state and key guarantees |
+|---|---|
+| `users` | One owner enforced by `id = 1`; unique username, email, GitHub ID, and Google ID |
+| `tasks` | Status, priority, due/reminder timestamps, completion state, and reminder processing time |
+| `preferences` | One settings row, IANA timezone, email, digest schedules, and next occurrences |
+| `daily_tasks` | Definitions of recurring daily routines |
+| `daily_task_completions` | One completion per routine and local calendar date |
+| `focus_sessions` | UTC start/end, duration, category, notes, linked routine, and one nullable active slot |
+| `activities` | Editable task/routine/focus events and deduplicated external activity |
+| `external_profiles` | At most one GitHub and one LeetCode profile plus last-sync state |
+| `jobs` | Type, lifecycle, occurrence key, attempts, timestamps, and terminal error |
+
+Database constraints enforce enum-like values, one active focus session, unique external activity IDs, unique source activities, unique scheduling occurrences, and the single-owner model.
+
+### Scheduler
+
+`scheduler.scheduler` is a continuously running process. Every configured interval it:
+
+1. locks and claims pending task reminders whose `reminder_at` is due;
+2. advances enabled daily and weekly schedule state;
+3. creates durable `QUEUED` job rows with unique occurrence keys;
+4. publishes unpublished job identifiers to Kafka;
+5. records `published_at` only after producer delivery succeeds.
+
+`SELECT ... FOR UPDATE SKIP LOCKED`, `reminder_processed_at`, periodic `next_*` timestamps, and unique occurrence keys prevent repeated scheduling.
+
+### Kafka
+
+Pace creates three three-partition topics:
+
+| Topic | Purpose |
+|---|---|
+| `productivity-jobs` | Newly scheduled work |
+| `productivity-jobs-retry` | Jobs awaiting another attempt |
+| `productivity-jobs-dead` | Jobs that exhausted three attempts |
+
+Messages contain the durable job ID, job type, creation timestamp, attempt count, and task ID when applicable. Workers use the `dayflow-workers` consumer group and commit Kafka offsets only after the database-backed processing attempt completes.
+
+### Worker and handlers
+
+`worker.worker` consumes the main and retry topics, locks the corresponding database job, and dispatches one of three handlers:
+
+- `TASK_REMINDER`
+- `DAILY_DIGEST`
+- `WEEKLY_SUMMARY`
+
+The lifecycle is `QUEUED -> RUNNING -> SUCCESS`. A handler failure increments `attempts`, records the error, and republishes to the retry topic while fewer than three attempts have run. The third failure marks the job `FAILED` and publishes it to the dead-letter topic. Already successful and terminally failed jobs are ignored when redelivered.
+
+### Email service
+
+Handlers call one `send_email(to, subject, body)` boundary. With `SMTP_HOST` configured, it supports authenticated SMTP and optional STARTTLS. Without SMTP configuration, it prints the rendered message for local development.
+
+## Core flows
+
+### Authentication
+
+Password sign-up stores a random-salt `scrypt` hash. Login accepts username or email and issues a signed seven-day cookie with `HttpOnly`, `SameSite=Strict`, and environment-controlled `Secure` settings.
+
+GitHub and Google OAuth use a random state cookie, provider callbacks, and verified email addresses. OAuth identities can create the owner or link to the existing owner only when the verified email matches. Provider access tokens are used during the callback and are not persisted.
+
+### Planning and completion
+
+- A scheduled task stores optional due and reminder timestamps in UTC.
+- Completing a task records `completed_at` and creates one task activity.
+- Reopening it removes that generated activity.
+- A daily routine remains defined across days; its checkbox state comes from a completion row for the configured local date.
+- Stopping a focus session calculates duration on the server and creates a focus activity. Focus sessions can repeatedly reference the same daily routine without completing it automatically.
+
+Activity editing changes only the timeline record, not its source task, routine completion, or focus session.
+
+### External activity
+
+The authenticated browser requests profile synchronization on load, every 30 seconds, and when the tab becomes visible.
+
+GitHub synchronization:
+
+- uses authenticated user events when `GITHUB_SYNC_TOKEN` exists and public events otherwise;
+- imports pull requests, reviews, issues, comments, repository creation, releases, stars, and other recent events;
+- uses GitHub commit search for recent commits authored by the linked username;
+- keys commits by SHA and external events by GitHub event ID;
+- rebuilds overlapping recent commit rows to avoid duplicate counts.
+
+LeetCode synchronization uses the public GraphQL endpoint to import up to 20 recent accepted submissions and resolve frontend problem numbers. Both providers are upstream dependencies and may return rate-limit or availability errors.
+
+The dashboard groups same-day commits by repository and shows accepted submissions separately. The consistency tracker aggregates tasks, routines, focus sessions, repository commit totals, and LeetCode problems by local date.
+
+### Reminder and digest delivery
+
+```mermaid
+sequenceDiagram
+    participant S as Scheduler
+    participant D as PostgreSQL
+    participant K as Kafka
+    participant W as Worker
+    participant M as SMTP
+
+    S->>D: Claim due occurrence and create job
+    S->>K: Publish job ID
+    K->>W: Deliver job
+    W->>D: Lock job and mark RUNNING
+    W->>D: Query task or summary data
+    W->>M: Send email
+    W->>D: Mark SUCCESS
+    W->>K: Commit offset
 ```
 
----
+## Time model
 
-# 2. Why This Architecture Exists
+- PostgreSQL timestamps are timezone-aware UTC values.
+- API task timestamps must contain an offset and are normalized to UTC.
+- The default application timezone is `Asia/Kolkata` and can be changed to another valid IANA zone.
+- A daily digest queries `[00:00 today, 00:00 next day)` in local time after converting both boundaries to UTC.
+- A weekly summary queries the previous `[Monday 00:00, following Monday 00:00)` local interval after UTC conversion.
+- Daily-routine state and activity feeds use the user's local calendar date.
 
-Pace has two different kinds of work.
+## Security and reliability boundaries
 
-## User-facing work
+- Secrets come from environment variables and are not stored in source control.
+- Session signatures use HMAC-SHA256 and constant-time comparison.
+- Password hashes use `scrypt` with a random 16-byte salt.
+- OAuth state validation protects callbacks against request forgery.
+- Pydantic validates input shape, lengths, timezone names, and timestamp offsets.
+- Database constraints backstop application validation and concurrency rules.
+- Kafka delivery is confirmed before `published_at` is set.
+- Worker offsets use explicit synchronous commits.
+- Retry and dead-letter state remains inspectable through PostgreSQL job endpoints.
 
-Examples:
+Pace does not currently encrypt application data at the field level, persist OAuth provider tokens, delay retry-topic consumption with backoff, or support multiple application users.
 
-```text
-Create a task
-Mark a task complete
-Change a due date
-Update digest preferences
-```
+## Deployment boundary
 
-These operations should happen immediately through FastAPI.
+`render.yaml` currently provisions:
 
-## Background work
+- one Render FastAPI web service;
+- one Render PostgreSQL database;
+- migrations during web-service startup;
+- generated session signing and configurable OAuth/GitHub secrets.
 
-Examples:
+That Blueprint does **not** provision Kafka, the scheduler, the worker, or SMTP credentials. Therefore its web features work after deployment, but scheduled email requires those background components to be deployed separately and kept running. Free Render PostgreSQL and web plans also have expiration, sleep, and outbound-SMTP limitations; production operation requires suitable hosted plans or providers.
 
-```text
-Send reminder at 5:00 PM
-Generate daily digest at 8:00 PM
-Generate weekly summary on Sunday
-```
+## Verification
 
-These operations happen later and should not block API requests.
+GitHub Actions runs against PostgreSQL 17 and performs:
 
-Therefore Pace separates:
+1. dependency installation;
+2. `alembic upgrade head`;
+3. `alembic check`;
+4. Python compilation;
+5. isolated checks covering CRUD, preferences, scheduling, routines, authentication, focus, activities, OAuth, and external profiles.
 
-```text
-API request handling
-```
-
-from:
-
-```text
-scheduled background execution
-```
-
----
-
-# 3. Component Responsibilities
-
-## 3.1 Web Frontend
-
-FastAPI serves a responsive, dependency-free HTML, CSS, and JavaScript interface. It separates recurring daily routines from one-time scheduled tasks, provides a dedicated start/stop focus page, three scrollable daily activity feeds, GitHub and LeetCode profile connections, account and OAuth controls, preference editing, a persistent light/dark theme, and a 12-week consistency tracker.
-
-The frontend calls the REST API and never accesses PostgreSQL directly.
-
-## 3.2 FastAPI
-
-FastAPI is the user-facing backend.
-
-Responsibilities:
-
-- create the single owner account with a salted password hash or verified OAuth identity
-- authenticate through password, GitHub, or Google and issue the same signed, expiring session cookie
-- create tasks
-- list tasks
-- update tasks
-- delete tasks
-- mark tasks complete
-- start and stop the single active focus session
-- save reminder times
-- save daily digest preferences
-- save weekly summary preferences
-- expose job status
-- serve the web frontend
-
-FastAPI should not:
-
-- continuously check the clock
-- generate scheduled digests
-- consume Kafka messages
-- perform long-running background jobs
-
-Example:
-
-```text
-POST /tasks
-
-        |
-        v
-
-FastAPI validates request
-
-        |
-        v
-
-PostgreSQL stores task
-
-        |
-        v
-
-HTTP response
-```
-
----
-
-## 3.3 PostgreSQL
-
-PostgreSQL is the source of application state for Pace.
-
-All timestamps are stored as timezone-aware UTC values (`TIMESTAMPTZ`). Incoming timestamps must include an offset and are converted to UTC before persistence.
-
-Use:
-
-```text
-SQLAlchemy 2.x
-Alembic
-psycopg
-```
-
-It stores:
-
-```text
-Tasks
-Preferences
-Scheduled timestamps
-Job records
-Focus sessions
-Editable activities
-```
-
-Core tables:
-
-```text
-tasks
-preferences
-jobs
-daily_tasks
-daily_task_completions
-users
-focus_sessions
-activities
-```
-
-`focus_sessions` stores optional category, linked task, notes, UTC start and end timestamps, and the server-calculated duration. A unique nullable active marker permits any number of completed rows but only one row whose timer is active.
-
-`activities` stores editable timeline entries produced when a task, daily routine, or focus session is completed. Editing or deleting an activity does not mutate its source record; future integrations such as GitHub sync can write to the same timeline.
-
-`external_profiles` stores one public GitHub profile and one public LeetCode profile. The dashboard refreshes connected profiles every 30 seconds and when the tab becomes visible, importing deduplicated public events into `activities`. GitHub entries retain repository details and commit counts; LeetCode entries retain accepted-submission timestamps, problem numbers, and titles. The daily feeds query only the configured local calendar day, while the consistency tracker uses a bounded 84-day history query. GitHub can use an environment-managed `GITHUB_SYNC_TOKEN`; OAuth access tokens are not persisted in PostgreSQL.
-
-Suggested `tasks` fields:
-
-```text
-id
-title
-description
-status
-priority
-due_at
-reminder_at
-reminder_processed_at
-created_at
-completed_at
-```
-
-Suggested `preferences` fields:
-
-```text
-id
-email
-timezone (defaults to Asia/Kolkata)
-daily_digest_enabled
-daily_digest_time
-next_daily_digest_at
-weekly_summary_enabled
-weekly_summary_day
-weekly_summary_time
-next_weekly_summary_at
-```
-
-PostgreSQL gives Pace a strong relational backend while keeping the project focused on application architecture, scheduling, Kafka, and workers.
-
----
-
-## 3.4 Scheduler
-
-The scheduler is a separate Python process.
-
-Its responsibility is:
-
-> Determine what work is due now.
-
-Conceptually:
-
-```text
-while running:
-
-    check task reminders
-
-    check daily digest schedule
-
-    check weekly summary schedule
-
-    if something is due:
-        create a job
-        publish it
-```
-
-The scheduler does not perform the work itself.
-
-Bad design:
-
-```text
-Scheduler
-   |
-   v
-Generate digest
-   |
-   v
-Send email
-```
-
-Better design:
-
-```text
-Scheduler
-   |
-   v
-Create job
-   |
-   v
-Kafka
-```
-
-This keeps scheduling and execution separate.
-
----
-
-# 4. Kafka
-
-Kafka sits between the scheduler and workers.
-
-Topics:
-
-```text
-productivity-jobs
-productivity-jobs-retry
-productivity-jobs-dead
-```
-
-The main topic distributes new jobs, the retry topic requeues failed work, and the dead-letter topic retains jobs that exhaust three attempts. Kafka's responsibility is:
-
-> Hold and distribute background jobs until workers process them.
-
-Example message:
-
-```json
-{
-  "job_id": "550e8400-e29b-41d4-a716-446655440000",
-  "type": "TASK_REMINDER",
-  "task_id": 12,
-  "created_at": "2026-08-23T11:30:00Z"
-}
-```
-
-Daily digest:
-
-```json
-{
-  "job_id": "1c03b0c9-c234-43e5-b244-9709d95d1503",
-  "type": "DAILY_DIGEST",
-  "created_at": "2026-08-23T14:30:00Z"
-}
-```
-
-Weekly summary:
-
-```json
-{
-  "job_id": "4f8b185b-0dc8-49d8-9c21-b52f150ab8d7",
-  "type": "WEEKLY_SUMMARY",
-  "created_at": "2026-08-23T14:30:00Z"
-}
-```
-
-The scheduler acts as:
-
-```text
-Kafka Producer
-```
-
-The worker acts as:
-
-```text
-Kafka Consumer
-```
-
----
-
-# 5. Worker
-
-A worker is a separate Python process that consumes Kafka jobs.
-
-Basic flow:
-
-```text
-Kafka message
-     |
-     v
-Read job type
-     |
-     v
-Select handler
-     |
-     v
-Execute handler
-```
-
-Example dispatch:
-
-```text
-TASK_REMINDER
-      |
-      v
-handle_task_reminder()
-
-
-DAILY_DIGEST
-      |
-      v
-handle_daily_digest()
-
-
-WEEKLY_SUMMARY
-      |
-      v
-handle_weekly_summary()
-```
-
-The worker should keep consuming jobs after one job finishes.
-
-One failed job should not permanently stop the worker.
-
----
-
-# 6. Handler Layer
-
-Handlers contain the actual background-job behavior.
-
-Suggested handlers:
-
-```text
-handle_task_reminder
-handle_daily_digest
-handle_weekly_summary
-```
-
-## Task Reminder Handler
-
-Input:
-
-```text
-task_id
-```
-
-Flow:
-
-```text
-Load task
-   |
-   v
-Format reminder
-   |
-   v
-Send email
-```
-
-Example:
-
-```text
-Reminder: Study Kafka
-
-Due: Today at 9:00 PM
-Priority: HIGH
-```
-
----
-
-# 7. Daily Digest Handler
-
-The daily digest worker queries the database for relevant tasks.
-
-Its query interval is the user's local calendar day: `[00:00 today, 00:00 next day)`. The boundaries are calculated in the configured application timezone and converted to UTC before querying PostgreSQL.
-
-It should find:
-
-```text
-completed today
-pending today
-overdue
-due tomorrow
-```
-
-Flow:
-
-```text
-DAILY_DIGEST job
-       |
-       v
-Query PostgreSQL
-       |
-       v
-Calculate summary
-       |
-       v
-Format email
-       |
-       v
-Send email
-```
-
-Example:
-
-```text
-Your Pace Daily Digest
-
-Completed today: 3
-Pending: 2
-Overdue: 1
-
-Completed
-- Finish API
-- Revise OS
-- Submit assignment
-
-Pending
-- Study Kafka
-- Update resume
-
-Due Tomorrow
-- Finish DBMS project
-```
-
-No LLM is required.
-
----
-
-# 8. Weekly Summary Handler
-
-The weekly summary queries tasks from the previous week.
-
-Its query interval is `[Monday 00:00, following Monday 00:00)` in the user's local timezone. Both boundaries are converted to UTC before querying PostgreSQL.
-
-Calculate:
-
-```text
-tasks created
-tasks completed
-completion rate
-overdue tasks
-high-priority tasks completed
-most productive day
-```
-
-Example:
-
-```text
-Your Pace Weekly Summary
-
-Tasks created: 32
-Tasks completed: 26
-Completion rate: 81%
-
-Most productive day:
-Wednesday
-
-Overdue:
-3
-```
-
----
-
-# 9. Email Service
-
-Email delivery should be behind a small service abstraction.
-
-Example interface:
-
-```python
-send_email(
-    to,
-    subject,
-    body
-)
-```
-
-Handlers should not need to know whether email is sent using:
-
-```text
-SMTP
-Resend
-SendGrid
-```
-
-Without SMTP configuration, email contents print to the terminal. With `SMTP_*` configured, the service sends authenticated SMTP mail with optional STARTTLS:
-
-```text
-Worker
-   |
-   v
-Email Service
-   |
-   v
-Real Inbox
-```
-
----
-
-# 10. Complete Task Reminder Flow
-
-Suppose the user creates:
-
-```text
-Task:
-Study Kafka
-
-Due:
-9:00 PM
-
-Reminder:
-8:00 PM
-```
-
-Flow:
-
-```text
-1. User
-
-      |
-      | POST /tasks
-      v
-
-2. FastAPI
-
-      |
-      v
-
-3. PostgreSQL
-
-Task stored with:
-reminder_at = 20:00
-
-      |
-      v
-
-4. Scheduler
-
-At 20:00:
-find reminder_at <= now
-
-      |
-      v
-
-5. Kafka Producer
-
-Publish:
-
-{
-  type: TASK_REMINDER,
-  task_id: 12
-}
-
-      |
-      v
-
-6. Kafka
-
-productivity-jobs
-
-      |
-      v
-
-7. Worker
-
-consume message
-
-      |
-      v
-
-8. Reminder Handler
-
-load Task 12
-
-      |
-      v
-
-9. Email Service
-
-send reminder
-```
-
----
-
-# 11. Complete Daily Digest Flow
-
-Suppose the user configures:
-
-```text
-Daily digest:
-8:00 PM
-```
-
-At 8 PM:
-
-```text
-Scheduler
-   |
-   | digest is due
-   v
-Kafka
-   |
-   | DAILY_DIGEST
-   v
-Worker
-   |
-   v
-Query today's tasks
-   |
-   v
-Generate digest
-   |
-   v
-Email Service
-```
-
----
-
-# 12. Multiple Workers
-
-Run one or more workers in the same Kafka consumer group:
-
-```text
-                     Kafka
-              productivity-jobs
-                     |
-          +----------+----------+
-          |          |          |
-          v          v          v
-       Worker 1   Worker 2   Worker 3
-```
-
-Kafka partitions allow different workers to process jobs in parallel.
-
-Example:
-
-```text
-Partition 0 -> Worker 1
-Partition 1 -> Worker 2
-Partition 2 -> Worker 3
-```
-
-All workers belong to:
-
-```text
-consumer group:
-dayflow-workers
-```
-
-This means a job is assigned to one consumer in the group rather than every worker receiving the same job.
-
----
-
-# 13. Job Types
-
-Keep the job system small.
-
-Initial supported job types:
-
-```text
-TASK_REMINDER
-DAILY_DIGEST
-WEEKLY_SUMMARY
-```
-
-Do not build a generic job scheduler framework.
-
-Pace's scheduler exists specifically to support Pace features.
-
----
-
-# 14. Job Lifecycle
-
-The implemented lifecycle is:
-
-```text
-             QUEUED
-                |
-                v
-             RUNNING
-                |
-        +-------+-------+
-        |               |
-        v               v
-     SUCCESS          FAILED
-```
-
-The scheduler creates the job.
-
-The worker executes it.
-
-PostgreSQL stores its state.
-
----
-
-# 15. Failure and Retry Architecture
-
-The implemented retry topology is:
-
-```text
-productivity-jobs
-       |
-       v
-     Worker
-       |
-      fail
-       |
-       v
-productivity-jobs-retry
-       |
-      fail repeatedly
-       |
-       v
-productivity-jobs-dead
-```
-
-Keep retries simple:
-
-```text
-maximum attempts = 3
-```
-
-Do not build complicated retry infrastructure initially.
-
----
-
-# 16. Duplicate Scheduling Problem
-
-The scheduler may run every few seconds.
-
-Without protection:
-
-```text
-20:00:00 -> digest due -> publish
-20:00:05 -> digest still due -> publish
-20:00:10 -> digest still due -> publish
-```
-
-This would generate duplicate emails.
-
-Pace should track scheduling state such as:
-
-```text
-next_daily_digest_at
-next_weekly_summary_at
-reminder_processed_at
-```
-
-`reminder_processed_at` stops a reminder being detected repeatedly. Periodic `next_*` state, unique occurrence keys, and terminal job states provide the broader claim and idempotency behavior required for Kafka publishing and consumption.
-
----
-
-# 17. Project Structure
-
-```text
-dayflow/
-|
-├── app/
-│   ├── main.py
-│   ├── auth.py
-│   ├── database.py
-│   ├── models.py
-│   ├── schemas.py
-│   ├── static/
-│   │   ├── index.html
-│   │   ├── styles.css
-│   │   └── app.js
-│   |
-│   ├── api/
-│   │   ├── tasks.py
-│   │   ├── jobs.py
-│   │   └── preferences.py
-│   |
-│   └── services/
-│       └── email_service.py
-|
-├── scheduler/
-│   └── scheduler.py
-|
-├── messaging/
-│   ├── kafka.py
-│   └── setup_kafka.py
-|
-├── worker/
-│   ├── worker.py
-│   └── handlers.py
-|
-├── tests/
-|
-├── requirements.txt
-├── README.md
-├── render.yaml
-└── ARCHITECTURE.md
-```
-
-Do not create layers that are not needed yet.
-
----
-
-# 18. Processes Running Locally
-
-The developer runs three application processes:
-
-## Terminal 1
-
-```text
-FastAPI
-```
-
-Example:
-
-```bash
-uvicorn app.main:app --reload
-```
-
-## Terminal 2
-
-```text
-Scheduler
-```
-
-Example:
-
-```bash
-python -m scheduler.scheduler
-```
-
-## Terminal 3
-
-```text
-Worker
-```
-
-Example:
-
-```bash
-python -m worker.worker
-```
-
-Kafka runs separately. Create the three required topics with `python -m messaging.setup_kafka`.
-
-Later, multiple workers can be started from additional terminals.
-
----
-
-# 19. What Pace Is Teaching
-
-The important software-engineering concepts are:
-
-```text
-REST APIs
-database design
-background processes
-scheduling
-producer-consumer architecture
-Kafka producers
-Kafka consumers
-topics
-partitions
-consumer groups
-offsets
-workers
-asynchronous processing
-failure handling
-retries
-dead-letter queues
-idempotency
-race conditions
-separation of concerns
-```
-
----
-
-# 20. Non-Goals
-
-For the initial learning version, do not introduce:
-
-```text
-Docker
-Kubernetes
-Prometheus
-Grafana
-Redis
-microservices
-LLMs
-complex event-driven architecture
-generic workflow engines
-```
-
-These can be considered later only if Pace develops a real requirement for them.
-
----
-
-# 21. Architectural Principle
-
-Every component must answer a concrete question.
-
-```text
-Web Frontend
-"How does the user interact with Pace?"
-
-FastAPI
-"What does the user want?"
-
-PostgreSQL
-"What tasks and settings exist?"
-
-Scheduler
-"What needs to happen now?"
-
-Kafka
-"What background work needs to be distributed?"
-
-Worker
-"Who will execute this work?"
-
-Handler
-"What does this job actually do?"
-
-Email Service
-"How does the result reach the user?"
-```
-
-If a new technology cannot answer a real problem in Pace, do not add it.
+The test suite uses SMTP console mode, so CI verifies message generation and job behavior without sending external email.
