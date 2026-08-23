@@ -239,3 +239,10 @@ Run the isolated checks:
 The background check disables SMTP and uses an in-memory database, so test addresses cannot generate real outbound email.
 
 
+## Author
+
+Developed by **K Rajeev**.
+
+## License
+
+Dailyflow is available under the [MIT License](LICENSE).
