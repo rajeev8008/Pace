@@ -1,6 +1,6 @@
-# Dailyflow
+# Pace
 
-Dailyflow is a full-stack productivity application for daily routines, scheduled tasks, reminders, and email summaries. It pairs a fast, responsive interface with a PostgreSQL-backed FastAPI API and a durable Kafka job pipeline.
+Pace is a full-stack productivity application for daily routines, scheduled tasks, reminders, and email summaries. It pairs a fast, responsive interface with a PostgreSQL-backed FastAPI API and a durable Kafka job pipeline.
 
 https://github.com/user-attachments/assets/83eb173d-d2cc-4f56-9246-86f045d22fb6
 
