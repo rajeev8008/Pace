@@ -8,7 +8,7 @@
 
 I wanted one honest view of my productivity. My daily routines and scheduled tasks lived in one place, focus time existed only in my head, and the work I did on GitHub and LeetCode was scattered across separate profiles. Pace brings those signals together so I can plan what I intend to do and review what I actually accomplished each day.
 
-Pace is a personal productivity platform for daily routines, one-time tasks, focus sessions, developer activity, consistency tracking, reminders, and email summaries. It currently runs as an intentionally single-owner application.
+Pace is a personal productivity platform for daily routines, one-time tasks, focus sessions, developer activity, consistency tracking, reminders, and email summaries.
 
 ### Engineering highlights
 
@@ -16,13 +16,7 @@ Pace is a personal productivity platform for daily routines, one-time tasks, foc
 - Durable scheduler → Kafka → worker pipeline with persisted jobs, retries, and dead-letter routing
 - Unified activity model for Pace completions, GitHub development, and LeetCode practice
 
-## Product tour
-
-### Walkthrough
-
-https://github.com/user-attachments/assets/83eb173d-d2cc-4f56-9246-86f045d22fb6
-
-### Interface
+## Interface
 
 <p align="center">
   <img width="49%" alt="Pace dashboard overview" src="https://github.com/user-attachments/assets/c830e5a2-5f50-4ec8-a02e-629320035f31" />
