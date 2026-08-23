@@ -10,7 +10,7 @@
   <main>
     <header>
       <div><p class="brand"><span>D</span> Dailyflow</p><h1>Plan. Focus.<br>Progress.</h1><p id="today"></p></div>
-      <div class="header-actions"><button class="icon" id="theme-button" aria-label="Switch to dark mode">☾</button><button class="icon" id="settings-button" aria-label="Open preferences">⚙</button></div>
+      <div class="header-actions"><button class="icon" id="theme-button" aria-label="Switch to dark mode">☾</button><button class="icon" id="settings-button" aria-label="Open preferences">⚙</button><button class="icon" id="logout-button" aria-label="Log out">↪</button></div>
     </header>
 
     <section class="stats" aria-label="Task summary">
@@ -62,6 +62,15 @@
       <div class="schedule"><label class="check"><input name="daily_digest_enabled" type="checkbox"> Daily digest</label><input name="daily_digest_time" type="time"></div>
       <div class="schedule"><label class="check"><input name="weekly_summary_enabled" type="checkbox"> Weekly summary</label><select name="weekly_summary_day"><option>MONDAY</option><option>TUESDAY</option><option>WEDNESDAY</option><option>THURSDAY</option><option>FRIDAY</option><option>SATURDAY</option><option>SUNDAY</option></select><input name="weekly_summary_time" type="time"></div>
       <button type="submit">Save preferences</button>
+    </form>
+  </dialog>
+  <dialog id="login" class="login-dialog">
+    <form id="login-form">
+      <div><p class="brand"><span>D</span> Dailyflow</p><h2>Welcome back</h2><p>Sign in to continue your flow.</p></div>
+      <label>Username<input name="username" autocomplete="username" required autofocus></label>
+      <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+      <p id="login-error" role="alert"></p>
+      <button type="submit">Sign in</button>
     </form>
   </dialog>
   <dialog id="task-editor">
