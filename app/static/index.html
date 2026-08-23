@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dayflow</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div><p class="brand"><span>D</span> Dailyflow</p><h1>Plan. Focus.<br>Progress.</h1><p id="today"></p></div>
+      <div class="header-actions"><button class="icon" id="theme-button" aria-label="Switch to dark mode">☾</button><button class="icon" id="settings-button" aria-label="Open preferences">⚙</button></div>
+    </header>
+
+    <section class="stats" aria-label="Task summary">
+      <article><strong id="pending-count">0</strong><span>To do</span></article>
+      <article><strong id="done-count">0</strong><span>Completed</span></article>
+      <article><strong id="today-count">0</strong><span>Due today</span></article>
+    </section>
+
+    <section class="panel tracker-panel">
+      <div class="tracker-heading"><div><p class="section-label">CONSISTENCY</p><h2>Your flow</h2></div><span>Last 12 weeks</span></div>
+      <div class="tracker-scroll"><div id="tracker" class="tracker" aria-label="Task completion tracker"></div></div>
+      <div class="legend"><span>Less</span><i></i><i class="level-1"></i><i class="level-2"></i><i class="level-3"></i><span>More</span></div>
+    </section>
+
+    <section class="section-block">
+      <div class="section-title"><div><p class="section-label">EVERY DAY</p><h2>Daily routines</h2></div><span>Resets each morning</span></div>
+      <form id="daily-form" class="daily-add"><input name="title" maxlength="200" placeholder="Add a daily routine" required autocomplete="off"><button type="submit">Add daily</button></form>
+      <div id="daily-list" class="daily-list" aria-live="polite"></div>
+    </section>
+
+    <section class="section-block">
+    <div class="section-title"><div><p class="section-label">ONE TIME</p><h2>Scheduled tasks</h2></div><span>Tasks and events</span></div>
+    <section class="panel composer">
+      <form id="task-form">
+        <input id="title" name="title" placeholder="What needs to flow?" maxlength="200" required autocomplete="off">
+        <div class="form-row">
+          <fieldset class="priority-picker" aria-label="Priority"><label><input type="radio" name="priority" value="LOW"><span>Low</span></label><label><input type="radio" name="priority" value="MEDIUM" checked><span>Medium</span></label><label><input type="radio" name="priority" value="HIGH"><span>High</span></label></fieldset>
+          <div class="date-control"><div class="date-label"><label for="new-due-at">Due date</label><button type="button" class="today-button" data-target="due_at">Today</button></div><input id="new-due-at" name="due_at" type="datetime-local"></div>
+          <div class="date-control"><div class="date-label"><label for="new-reminder-at">Reminder</label><button type="button" class="today-button" data-target="reminder_at">Today</button></div><input id="new-reminder-at" name="reminder_at" type="datetime-local"></div>
+          <button type="submit">Add task</button>
+        </div>
+      </form>
+    </section>
+
+    <nav aria-label="Task filters">
+      <button class="filter active" data-filter="ALL">All</button>
+      <button class="filter" data-filter="PENDING">Active</button>
+      <button class="filter" data-filter="COMPLETED">Done</button>
+    </nav>
+    <section id="task-list" class="task-list" aria-live="polite"></section>
+    </section>
+  </main>
+
+  <dialog id="settings">
+    <form id="settings-form">
+      <div class="dialog-title"><h2>Preferences</h2><button type="button" class="icon" id="close-settings" aria-label="Close">×</button></div>
+      <label>Email<input name="email" type="email" placeholder="you@example.com"></label>
+      <label>Timezone<input name="timezone" value="Asia/Kolkata" required></label>
+      <div class="schedule"><label class="check"><input name="daily_digest_enabled" type="checkbox"> Daily digest</label><input name="daily_digest_time" type="time"></div>
+      <div class="schedule"><label class="check"><input name="weekly_summary_enabled" type="checkbox"> Weekly summary</label><select name="weekly_summary_day"><option>MONDAY</option><option>TUESDAY</option><option>WEDNESDAY</option><option>THURSDAY</option><option>FRIDAY</option><option>SATURDAY</option><option>SUNDAY</option></select><input name="weekly_summary_time" type="time"></div>
+      <button type="submit">Save preferences</button>
+    </form>
+  </dialog>
+  <dialog id="task-editor">
+    <form id="edit-form">
+      <div class="dialog-title"><h2>Edit task</h2><button type="button" class="icon" id="close-editor" aria-label="Close">×</button></div>
+      <label>Task title<input name="title" maxlength="200" required></label>
+      <label>Priority<select name="priority"><option value="LOW">Low priority</option><option value="MEDIUM">Medium priority</option><option value="HIGH">High priority</option></select></label>
+      <label>Due date<input name="due_at" type="datetime-local"></label>
+      <label>Reminder<input name="reminder_at" type="datetime-local"></label>
+      <div class="dialog-actions"><button type="button" class="danger" id="editor-delete">Delete task</button><button type="submit">Save changes</button></div>
+    </form>
+  </dialog>
+  <dialog id="delete-confirmation" class="small-dialog">
+    <div><h2>Delete this task?</h2><p>This action cannot be undone.</p><div class="dialog-actions"><button type="button" id="cancel-delete">Keep task</button><button type="button" class="danger" id="confirm-delete">Delete</button></div></div>
+  </dialog>
+  <div id="toast" role="status"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
