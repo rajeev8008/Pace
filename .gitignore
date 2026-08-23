@@ -1,6 +1,6 @@
 .env
 .tmp/
+.tools/
 .venv/
 __pycache__/
 *.py[cod]
-
