@@ -14,6 +14,7 @@ def run_checks() -> None:
     assert signup.email == "rajeev@example.com"
     assert signup.display_name == "Rajeev"
     token = create_session("rajeev")
+    assert token.count(".") == 2
     assert verify_session(token) == "rajeev"
     try:
         verify_session(token + "changed")

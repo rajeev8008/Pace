@@ -61,7 +61,7 @@ Routers are divided by capability:
 | `preferences.py` | Email, timezone, and digest schedule settings |
 | `jobs.py` | Background-job inspection |
 
-All application routers except authentication require a valid signed session cookie.
+All application routers except authentication require a valid HS256 JWT from the HttpOnly session cookie.
 
 ### PostgreSQL
 
@@ -123,7 +123,7 @@ Handlers call one `send_email(to, subject, body)` boundary. With `SMTP_HOST` con
 
 ### Authentication
 
-Password sign-up stores a random-salt `scrypt` hash. Login accepts username or email and issues a signed seven-day cookie with `HttpOnly`, `SameSite=Strict`, and environment-controlled `Secure` settings.
+Password sign-up stores a random-salt `scrypt` hash. Login accepts username or email and issues a seven-day HS256 JWT containing `sub`, `iat`, and `exp` claims. The token is stored in a cookie with `HttpOnly`, `SameSite=Strict`, and environment-controlled `Secure` settings.
 
 GitHub and Google OAuth use a random state cookie, provider callbacks, and verified email addresses. OAuth identities can create the owner or link to the existing owner only when the verified email matches. Provider access tokens are used during the callback and are not persisted.
 
@@ -185,7 +185,7 @@ sequenceDiagram
 ## Security and reliability boundaries
 
 - Secrets come from environment variables and are not stored in source control.
-- Session signatures use HMAC-SHA256 and constant-time comparison.
+- JWT signatures use HS256 and constant-time comparison, and verification rejects unexpected algorithm metadata.
 - Password hashes use `scrypt` with a random 16-byte salt.
 - OAuth state validation protects callbacks against request forgery.
 - Pydantic validates input shape, lengths, timezone names, and timestamp offsets.

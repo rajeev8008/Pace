@@ -23,7 +23,7 @@ from app.models import ExternalProfile, User
 
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
-COOKIE_NAME = "dayflow_session"
+COOKIE_NAME = "pace_session"
 SESSION_SECONDS = 60 * 60 * 24 * 7
 OAUTH_STATE_COOKIE = "pace_oauth_state"
 
@@ -82,17 +82,22 @@ def verify_password(password: str, encoded: str) -> bool:
 
 
 def create_session(username: str) -> str:
-    payload = _encode(json.dumps({"sub": username, "exp": int(time.time()) + SESSION_SECONDS}, separators=(",", ":")).encode())
-    signature = _encode(hmac.new(_setting("SESSION_SECRET").encode(), payload.encode(), hashlib.sha256).digest())
-    return f"{payload}.{signature}"
+    now = int(time.time())
+    header = _encode(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+    payload = _encode(json.dumps({"sub": username, "iat": now, "exp": now + SESSION_SECONDS}, separators=(",", ":")).encode())
+    signing_input = f"{header}.{payload}"
+    signature = _encode(hmac.new(_setting("SESSION_SECRET").encode(), signing_input.encode(), hashlib.sha256).digest())
+    return f"{signing_input}.{signature}"
 
 
 def verify_session(token: str) -> str:
     try:
-        payload, signature = token.split(".", 1)
-        expected = _encode(hmac.new(_setting("SESSION_SECRET").encode(), payload.encode(), hashlib.sha256).digest())
+        header, payload, signature = token.split(".")
+        metadata = json.loads(_decode(header))
+        signing_input = f"{header}.{payload}"
+        expected = _encode(hmac.new(_setting("SESSION_SECRET").encode(), signing_input.encode(), hashlib.sha256).digest())
         data = json.loads(_decode(payload))
-        if not hmac.compare_digest(signature, expected) or data["exp"] < time.time():
+        if metadata != {"alg": "HS256", "typ": "JWT"} or not hmac.compare_digest(signature, expected) or data["exp"] < time.time() or not isinstance(data.get("sub"), str):
             raise ValueError
         return str(data["sub"])
     except (ValueError, KeyError, TypeError, json.JSONDecodeError):
@@ -100,12 +105,12 @@ def verify_session(token: str) -> str:
 
 
 def require_auth(
-    dayflow_session: str | None = Cookie(default=None, alias=COOKIE_NAME),
+    pace_session: str | None = Cookie(default=None, alias=COOKIE_NAME),
     db: Session = Depends(get_db),
 ) -> str:
-    if not dayflow_session:
+    if not pace_session:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")
-    username = verify_session(dayflow_session)
+    username = verify_session(pace_session)
     if not db.scalar(select(User).where(User.username == username)):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")
     return username

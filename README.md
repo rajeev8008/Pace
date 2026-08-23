@@ -31,7 +31,7 @@ GitHub synchronization imports authored commits plus pull requests, issues, rele
 
 ### Engineering highlights
 
-- Timezone-correct FastAPI and PostgreSQL application with signed-session authentication and OAuth
+- Timezone-correct FastAPI and PostgreSQL application with HttpOnly JWT authentication and OAuth
 - Durable scheduler → Kafka → worker pipeline with persisted jobs, retries, and dead-letter routing
 - Unified activity model for Pace completions, GitHub development, and LeetCode practice
 ## Architecture
@@ -53,9 +53,9 @@ All stored timestamps are timezone-aware UTC values. Daily and weekly calculatio
 
 ## Stack
 
-Python, FastAPI, Pydantic, PostgreSQL, SQLAlchemy, Alembic, Apache Kafka, confluent-kafka, HTML, CSS, JavaScript, SMTP, GitHub Actions, and Render.
+Python, FastAPI, Pydantic, PostgreSQL, SQLAlchemy, Alembic, Apache Kafka, confluent-kafka, OAuth 2.0, HS256 JWT, HTML, CSS, JavaScript, SMTP, GitHub Actions, and Render.
 
-Authentication uses salted `scrypt` password hashes, signed seven-day HttpOnly session cookies, and optional GitHub or Google OAuth. Pace intentionally permits one owner account.
+Authentication uses salted `scrypt` password hashes, seven-day HS256 JWTs stored in HttpOnly cookies, and GitHub or Google OAuth. Pace intentionally permits one owner account.
 
 ## Project structure
 
