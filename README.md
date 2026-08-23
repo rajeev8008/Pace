@@ -8,27 +8,26 @@ https://github.com/user-attachments/assets/83eb173d-d2cc-4f56-9246-86f045d22fb6
 
 - Create, retrieve, edit, complete, filter, and delete scheduled tasks
 - Track recurring daily routines that reset each local calendar day
+- Run one active focus timer on a dedicated, simplified Focus page and link it to a task
+- Edit or delete timeline entries for completed tasks, routines, and focus sessions
 - Visualize 12 weeks of completed work in a GitHub-style activity tracker
 - Configure timezone-aware reminders, daily digests, and weekly summaries
-- Protect application data with signed, HttpOnly session authentication
+- Sign in with a password, GitHub, or Google while retaining signed, HttpOnly application sessions
 - Switch between responsive light and dark themes
 - Distribute background jobs through Kafka with retries and dead-letter handling
 
 ## Architecture
 
 ```mermaid
-flowchart LR
-    User([User]) --> UI[Responsive Web UI]
-    UI -->|HTTPS and signed session cookie| API[FastAPI API]
+flowchart TB
+    User([User]) --> Web[Web interface]
+    Web --> API[FastAPI]
+    OAuth[GitHub / Google] --> API
     API --> DB[(PostgreSQL)]
-    Scheduler[Scheduler] -->|Find due work| DB
-    Scheduler -->|Publish jobs| Kafka{{Apache Kafka}}
-    Kafka -->|dayflow-workers group| Workers[Worker pool]
-    Workers -->|Update job state| DB
-    Workers -->|Retry failures| Retry[Retry topic]
-    Retry --> Workers
-    Workers -->|Exhausted jobs| DLQ[Dead-letter topic]
-    Workers --> Email[SMTP email service]
+    DB --> Scheduler[Scheduler]
+    Scheduler --> Kafka[Kafka]
+    Kafka --> Worker[Workers]
+    Worker --> Email[Email delivery]
     Email --> User
 ```
 
@@ -36,11 +35,11 @@ FastAPI handles synchronous user requests, PostgreSQL is the source of truth, th
 
 ## Software Engineering Skills Demonstrated
 
-| Skill | How Dailyflow demonstrates it |
+| Skill | How Pace demonstrates it |
 |---|---|
 | Backend engineering | Modular FastAPI routers, Pydantic validation, explicit response models, and RESTful CRUD semantics |
 | Database engineering | SQLAlchemy 2.x models, PostgreSQL constraints, UTC `TIMESTAMPTZ` data, and versioned Alembic migrations |
-| Security engineering | Constant-time credential comparison, signed expiring sessions, HttpOnly and SameSite cookies, protected API boundaries, and environment-managed secrets |
+| Security engineering | Salted `scrypt` password hashing, verified-email OAuth linking, CSRF state validation, signed expiring sessions, HttpOnly and SameSite cookies, and environment-managed secrets |
 | Distributed systems | Kafka producers and consumers, partition-based parallelism, and the shared `dayflow-workers` consumer group |
 | Reliability engineering | Persisted job states, manual offset commits, bounded retries, dead-letter routing, row locking, and idempotency controls |
 | Time correctness | IANA timezone preferences and local daily and Monday-to-Monday weekly boundaries converted to UTC before queries |
@@ -61,7 +60,7 @@ FastAPI handles synchronous user requests, PostgreSQL is the source of truth, th
 
 ```text
 app/
-  api/                 Task, routine, preference, and job endpoints
+  api/                 Task, routine, focus, preference, and job endpoints
   services/            Email delivery
   static/              Connected web interface
   auth.py              Login and signed-session verification
@@ -90,14 +89,17 @@ Using the virtual environment's Python directly avoids PowerShell activation-pol
 
 ### 2. Configure
 
-Set PostgreSQL and authentication values in `.env`:
+Set PostgreSQL and session values in `.env`:
 
 ```env
 DATABASE_URL=postgresql+psycopg://dayflow_app:your_password@localhost:5433/dayflow
-APP_USERNAME=admin
-APP_PASSWORD=choose_a_strong_password
 SESSION_SECRET=generate_a_long_random_value
 COOKIE_SECURE=false
+OAUTH_BASE_URL=http://127.0.0.1:8000
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
 ```
 
 Generate a session secret in PowerShell:
@@ -132,9 +134,12 @@ Open `http://127.0.0.1:8000`. For background delivery, start Kafka and run these
 
 | Method | Endpoint | Purpose |
 |---|---|---|
+| `POST` | `/auth/signup` | Create the single owner account on first use |
 | `POST` | `/auth/login` | Start an authenticated session |
 | `POST` | `/auth/logout` | End the current session |
 | `GET` | `/auth/me` | Read the authenticated identity |
+| `GET` | `/auth/oauth/{provider}` | Start GitHub or Google OAuth |
+| `GET` | `/auth/oauth/{provider}/callback` | Verify OAuth identity and start a signed session |
 | `POST`, `GET` | `/tasks` | Create and list scheduled tasks |
 | `GET`, `PATCH`, `DELETE` | `/tasks/{id}` | Retrieve, update, complete, or delete a task |
 | `GET`, `PATCH` | `/preferences` | Read or update application preferences |
@@ -142,14 +147,20 @@ Open `http://127.0.0.1:8000`. For background delivery, start Kafka and run these
 | `GET`, `POST` | `/daily-tasks` | List or create recurring routines |
 | `PUT` | `/daily-tasks/{id}/today` | Set today's routine completion |
 | `DELETE` | `/daily-tasks/{id}` | Delete a recurring routine |
+| `POST` | `/focus-sessions/start` | Start the focus timer |
+| `POST` | `/focus-sessions/{id}/stop` | Stop and persist elapsed time |
+| `GET` | `/focus-sessions` | List focus-session history |
+| `GET` | `/focus-sessions/active` | Read the active focus session |
+| `GET` | `/activities/today` | List today's editable accomplishments |
+| `PATCH`, `DELETE` | `/activities/{id}` | Edit or remove a timeline entry |
 
-All application endpoints except login are protected by the session cookie. API timestamps must include an offset; PostgreSQL stores them as timezone-aware UTC values.
+All application endpoints except sign-up and login are protected by the session cookie. API timestamps must include an offset; PostgreSQL stores them as timezone-aware UTC values.
 
 ## Deploy to Render
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/rajeev8008/Dayflow)
 
-The Blueprint provisions the FastAPI web service and PostgreSQL database, runs migrations at startup, generates `SESSION_SECRET`, and asks for `APP_USERNAME` and `APP_PASSWORD`. After creation, Render provides the public `onrender.com` URL.
+The Blueprint provisions the FastAPI web service and PostgreSQL database, runs migrations at startup, and generates `SESSION_SECRET`. Create the private owner account from the sign-up option on first use. After creation, Render provides the public `onrender.com` URL.
 
 The web application, authentication, tasks, routines, preferences, and tracker run in this deployment. Scheduled email delivery additionally requires a reachable Kafka broker, SMTP secrets, and separate scheduler and worker processes; those are intentionally not provisioned by the free web Blueprint.
 
@@ -162,6 +173,9 @@ The web application, authentication, tasks, routines, preferences, and tracker r
 & ".\.venv\Scripts\python.exe" -m tests.test_background
 & ".\.venv\Scripts\python.exe" -m tests.test_daily_tasks
 & ".\.venv\Scripts\python.exe" -m tests.test_auth
+& ".\.venv\Scripts\python.exe" -m tests.test_focus_sessions
+& ".\.venv\Scripts\python.exe" -m tests.test_activities
+& ".\.venv\Scripts\python.exe" -m tests.test_oauth
 & ".\.venv\Scripts\alembic.exe" check
 ```
 
@@ -171,4 +185,4 @@ Developed by **K Rajeev**.
 
 ## License
 
-Dailyflow is available under the [MIT License](LICENSE).
+Pace is available under the [MIT License](LICENSE).

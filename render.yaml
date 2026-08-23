@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: dailyflow
+    name: pace
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
@@ -9,21 +9,25 @@ services:
     envVars:
       - key: DATABASE_URL
         fromDatabase:
-          name: dailyflow-db
+          name: pace-db
           property: connectionString
-      - key: APP_USERNAME
-        sync: false
-      - key: APP_PASSWORD
-        sync: false
       - key: SESSION_SECRET
         generateValue: true
       - key: COOKIE_SECURE
         value: "true"
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
       - key: PYTHON_VERSION
         value: "3.12.5"
 
 databases:
-  - name: dailyflow-db
+  - name: pace-db
     plan: free
-    databaseName: dailyflow
-    user: dailyflow
+    databaseName: pace
+    user: pace

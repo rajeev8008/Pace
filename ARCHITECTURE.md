@@ -1,13 +1,14 @@
-# Dayflow — Architecture
+# Pace — Architecture
 
-Dayflow is a personal productivity application that helps a user:
+Pace is a personal productivity application that helps a user:
 
 - create and manage tasks
+- run and record focused-work sessions
 - schedule task reminders
 - receive daily productivity digests
 - receive weekly productivity summaries
 
-The main engineering feature of Dayflow is its background job system:
+The main engineering feature of Pace is its background job system:
 
 ```text
 Scheduler -> Kafka -> Workers
@@ -24,7 +25,7 @@ The system should remain simple and local-first while the project is being learn
                           |
                           v
                   +----------------+
-                  | Dailyflow Web  |
+                  |    Pace Web    |
                   +-------+--------+
                           | HTTP/JSON
                           v
@@ -76,7 +77,7 @@ The system should remain simple and local-first while the project is being learn
 
 # 2. Why This Architecture Exists
 
-Dayflow has two different kinds of work.
+Pace has two different kinds of work.
 
 ## User-facing work
 
@@ -103,7 +104,7 @@ Generate weekly summary on Sunday
 
 These operations happen later and should not block API requests.
 
-Therefore Dayflow separates:
+Therefore Pace separates:
 
 ```text
 API request handling
@@ -121,7 +122,7 @@ scheduled background execution
 
 ## 3.1 Web Frontend
 
-FastAPI serves a responsive, dependency-free HTML, CSS, and JavaScript interface. It separates recurring daily routines from one-time scheduled tasks, provides preference editing and a persistent light/dark theme, and renders a 12-week completion tracker from both completion sources.
+FastAPI serves a responsive, dependency-free HTML, CSS, and JavaScript interface. It separates recurring daily routines from one-time scheduled tasks, provides a dedicated start/stop focus page, an editable accomplishment timeline, account and OAuth controls, preference editing, a persistent light/dark theme, and a 12-week completion tracker.
 
 The frontend calls the REST API and never accesses PostgreSQL directly.
 
@@ -131,12 +132,14 @@ FastAPI is the user-facing backend.
 
 Responsibilities:
 
-- authenticate the configured application user with a signed, expiring session cookie
+- create the single owner account with a salted password hash or verified OAuth identity
+- authenticate through password, GitHub, or Google and issue the same signed, expiring session cookie
 - create tasks
 - list tasks
 - update tasks
 - delete tasks
 - mark tasks complete
+- start and stop the single active focus session
 - save reminder times
 - save daily digest preferences
 - save weekly summary preferences
@@ -175,7 +178,7 @@ HTTP response
 
 ## 3.3 PostgreSQL
 
-PostgreSQL is the source of application state for Dayflow.
+PostgreSQL is the source of application state for Pace.
 
 All timestamps are stored as timezone-aware UTC values (`TIMESTAMPTZ`). Incoming timestamps must include an offset and are converted to UTC before persistence.
 
@@ -194,6 +197,8 @@ Tasks
 Preferences
 Scheduled timestamps
 Job records
+Focus sessions
+Editable activities
 ```
 
 Core tables:
@@ -204,7 +209,14 @@ preferences
 jobs
 daily_tasks
 daily_task_completions
+users
+focus_sessions
+activities
 ```
+
+`focus_sessions` stores optional category, linked task, notes, UTC start and end timestamps, and the server-calculated duration. A unique nullable active marker permits any number of completed rows but only one row whose timer is active.
+
+`activities` stores editable timeline entries produced when a task, daily routine, or focus session is completed. Editing or deleting an activity does not mutate its source record; future integrations such as GitHub sync can write to the same timeline.
 
 Suggested `tasks` fields:
 
@@ -236,7 +248,7 @@ weekly_summary_time
 next_weekly_summary_at
 ```
 
-PostgreSQL gives Dayflow a strong relational backend while keeping the project focused on application architecture, scheduling, Kafka, and workers.
+PostgreSQL gives Pace a strong relational backend while keeping the project focused on application architecture, scheduling, Kafka, and workers.
 
 ---
 
@@ -480,7 +492,7 @@ Send email
 Example:
 
 ```text
-Your Dayflow Daily Digest
+Your Pace Daily Digest
 
 Completed today: 3
 Pending: 2
@@ -523,7 +535,7 @@ most productive day
 Example:
 
 ```text
-Your Dayflow Weekly Summary
+Your Pace Weekly Summary
 
 Tasks created: 32
 Tasks completed: 26
@@ -742,7 +754,7 @@ WEEKLY_SUMMARY
 
 Do not build a generic job scheduler framework.
 
-Dayflow's scheduler exists specifically to support Dayflow features.
+Pace's scheduler exists specifically to support Pace features.
 
 ---
 
@@ -815,7 +827,7 @@ Without protection:
 
 This would generate duplicate emails.
 
-Dayflow should track scheduling state such as:
+Pace should track scheduling state such as:
 
 ```text
 next_daily_digest_at
@@ -920,7 +932,7 @@ Later, multiple workers can be started from additional terminals.
 
 ---
 
-# 19. What Dayflow Is Teaching
+# 19. What Pace Is Teaching
 
 The important software-engineering concepts are:
 
@@ -964,7 +976,7 @@ complex event-driven architecture
 generic workflow engines
 ```
 
-These can be considered later only if Dayflow develops a real requirement for them.
+These can be considered later only if Pace develops a real requirement for them.
 
 ---
 
@@ -974,7 +986,7 @@ Every component must answer a concrete question.
 
 ```text
 Web Frontend
-"How does the user interact with Dailyflow?"
+"How does the user interact with Pace?"
 
 FastAPI
 "What does the user want?"
@@ -998,4 +1010,4 @@ Email Service
 "How does the result reach the user?"
 ```
 
-If a new technology cannot answer a real problem in Dayflow, do not add it.
+If a new technology cannot answer a real problem in Pace, do not add it.
