@@ -1,7 +1,7 @@
 from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -21,6 +21,14 @@ def today(db: Session = Depends(get_db)) -> list[Activity]:
     start = datetime.combine(local_now.date(), time.min, zone).astimezone(timezone.utc)
     end = datetime.combine(local_now.date() + timedelta(days=1), time.min, zone).astimezone(timezone.utc)
     return list(db.scalars(select(Activity).where(Activity.occurred_at >= start, Activity.occurred_at < end).order_by(Activity.occurred_at.desc())))
+
+
+@router.get("/recent", response_model=list[ActivityRead])
+def recent(days: int = Query(84, ge=1, le=366), db: Session = Depends(get_db)) -> list[Activity]:
+    zone = ZoneInfo(get_preferences(db).timezone)
+    local_today = datetime.now(timezone.utc).astimezone(zone).date()
+    start = datetime.combine(local_today - timedelta(days=days - 1), time.min, zone).astimezone(timezone.utc)
+    return list(db.scalars(select(Activity).where(Activity.occurred_at >= start).order_by(Activity.occurred_at.desc())))
 
 
 @router.patch("/{activity_id}", response_model=ActivityRead)

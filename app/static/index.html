@@ -12,8 +12,8 @@
 <body>
   <main>
     <header>
-      <div><p class="brand">Pace</p><h1>Plan. Focus. Progress.</h1><p id="today"></p></div>
-      <div class="header-actions"><button class="icon" id="theme-button" aria-label="Switch to dark mode">☾</button><button class="icon" id="settings-button" aria-label="Open preferences">⚙</button><div class="account"><button class="icon account-button" id="account-button" aria-label="Open account menu" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg></button><div class="account-menu" id="account-menu" hidden><strong id="account-name">Pace user</strong><span id="account-email"></span><small id="account-username"></small><button type="button" id="logout-button">Log out</button></div></div></div>
+      <div class="hero-copy"><p class="brand">Pace</p><div><h1>Plan. Focus. Progress.</h1><p id="today"></p></div></div>
+      <div class="header-side"><div class="header-actions"><button class="icon" id="theme-button" aria-label="Switch to dark mode">☾</button><button class="icon" id="settings-button" aria-label="Open preferences">⚙</button><div class="profile-connect"><button class="icon" id="connections-toggle" aria-label="Connect profiles" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"></path><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"></path></svg></button><section id="connections-body" class="connections" hidden><div class="connections-title"><strong>Connect profiles</strong><span>GitHub · LeetCode</span></div><p>Paste a public profile link to import activity.</p><form id="profile-form"><select name="provider"><option value="GITHUB">GitHub</option><option value="LEETCODE">LeetCode</option></select><input name="profile_url" type="url" placeholder="Paste profile link" required><button type="submit">Link</button></form><div id="profile-list" class="profile-list"></div></section></div><div class="account"><button class="icon account-button" id="account-button" aria-label="Open account menu" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg></button><div class="account-menu" id="account-menu" hidden><strong id="account-name">Pace user</strong><span id="account-email"></span><small id="account-username"></small><button type="button" id="logout-button">Log out</button></div></div></div></div>
     </header>
 
     <nav class="page-nav" aria-label="Main navigation"><button class="page-link active" data-view="dashboard">Dashboard</button><button class="page-link" data-view="focus">Focus</button></nav>
@@ -24,9 +24,9 @@
       <article><strong id="today-count">0</strong><span>Due today</span></article>
     </section>
 
-    <section class="panel activity-panel" data-page="dashboard" aria-labelledby="activity-heading">
-      <div class="activity-heading"><div><p class="section-label">TODAY</p><h2 id="activity-heading">Activity</h2></div><span id="activity-count">0 accomplishments</span></div>
-      <div id="activity-list" class="activity-list" aria-live="polite"></div>
+    <section class="activity-board" data-page="dashboard" aria-labelledby="activity-heading">
+      <article class="panel activity-panel activity-main"><div class="activity-heading"><div><p class="section-label">ACTIVITY</p><h2 id="activity-heading">Tasks & daily activity</h2></div><span id="activity-count">0 entries</span></div><div id="activity-list" class="activity-list" aria-live="polite"></div></article>
+      <div class="activity-integrations"><article class="panel activity-panel activity-compact"><div class="activity-heading"><div><p class="section-label">GITHUB</p><h2>Development</h2></div><span id="github-count">0</span></div><div id="github-list" class="activity-list" aria-live="polite"></div></article><article class="panel activity-panel activity-compact"><div class="activity-heading"><div><p class="section-label">LEETCODE</p><h2>Problems solved</h2></div><span id="leetcode-count">0</span></div><div id="leetcode-list" class="activity-list" aria-live="polite"></div></article></div>
     </section>
 
     <section class="panel focus-panel focus-page" data-page="focus" aria-labelledby="focus-heading" hidden>
@@ -97,7 +97,7 @@
       <label id="confirm-password-field" hidden>Confirm password<input name="confirm_password" type="password" autocomplete="new-password"></label>
       <p id="login-error" role="alert"></p>
       <button type="submit">Sign in</button>
-      <div class="oauth-options"><span>or continue with</span><a href="/auth/oauth/github">GitHub</a><a href="/auth/oauth/google">Google</a></div>
+      <div class="oauth-options"><span>or continue with</span><a data-provider="github" href="/auth/oauth/github">GitHub</a><a data-provider="google" href="/auth/oauth/google">Google</a></div>
       <button type="button" id="auth-switch" class="auth-switch">New to Pace? Create your account</button>
     </form>
   </dialog>

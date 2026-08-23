@@ -5,7 +5,7 @@ os.environ["DATABASE_URL"] = "sqlite://"
 
 from sqlalchemy.orm import Session
 
-from app.api.activities import delete, today, update
+from app.api.activities import delete, recent, today, update
 from app.database import Base, engine
 from app.models import Activity, Preference
 from app.schemas import ActivityUpdate
@@ -18,6 +18,7 @@ def run_checks() -> None:
         activity = Activity(type="TASK", title="Original", detail="Done", occurred_at=datetime.now(timezone.utc))
         db.add(activity); db.commit(); db.refresh(activity)
         assert today(db)[0].title == "Original"
+        assert recent(84, db)[0].title == "Original"
         assert update(activity.id, ActivityUpdate(title="Edited"), db).title == "Edited"
         assert delete(activity.id, db).status_code == 204
         assert today(db) == []
