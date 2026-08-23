@@ -4,14 +4,6 @@ I wanted one honest view of my productivity. My daily routines and scheduled tas
 
 Pace is a single-user productivity application for daily routines, one-time tasks, focus sessions, developer activity, consistency tracking, reminders, and email summaries.
 
-## Product tour
-
-### Walkthrough
-
-https://github.com/user-attachments/assets/83eb173d-d2cc-4f56-9246-86f045d22fb6
-
-### Interface
-
 <p align="center">
   <img width="49%" alt="Pace dashboard overview" src="https://github.com/user-attachments/assets/c830e5a2-5f50-4ec8-a02e-629320035f31" />
   <img width="49%" alt="Pace productivity dashboard" src="https://github.com/user-attachments/assets/58f20227-3584-43e5-8f15-d1d7b92b0d64" />
