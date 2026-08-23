@@ -8,12 +8,6 @@ I wanted one honest view of my productivity. My daily routines and scheduled tas
 
 Pace is a personal productivity platform for daily routines, one-time tasks, focus sessions, developer activity, consistency tracking, reminders, and email summaries.
 
-### Engineering highlights
-
-- Timezone-correct FastAPI and PostgreSQL application with signed-session authentication and OAuth
-- Durable scheduler → Kafka → worker pipeline with persisted jobs, retries, and dead-letter routing
-- Unified activity model for Pace completions, GitHub development, and LeetCode practice
-
 <p align="center">
   <img width="49%" alt="Pace dashboard overview" src="https://github.com/user-attachments/assets/c830e5a2-5f50-4ec8-a02e-629320035f31" />
   <img width="49%" alt="Pace productivity dashboard" src="https://github.com/user-attachments/assets/58f20227-3584-43e5-8f15-d1d7b92b0d64" />
@@ -33,6 +27,11 @@ Pace is a personal productivity platform for daily routines, one-time tasks, foc
 
 GitHub synchronization imports authored commits plus pull requests, issues, releases, and other profile events. Commits are grouped by repository with their count and latest time. LeetCode synchronization imports recent accepted submissions with problem numbers and titles.
 
+### Engineering highlights
+
+- Timezone-correct FastAPI and PostgreSQL application with signed-session authentication and OAuth
+- Durable scheduler → Kafka → worker pipeline with persisted jobs, retries, and dead-letter routing
+- Unified activity model for Pace completions, GitHub development, and LeetCode practice
 ## Architecture
 
 ```mermaid
