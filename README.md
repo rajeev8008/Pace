@@ -2,7 +2,7 @@
 
 I wanted one honest view of my productivity. My daily routines and scheduled tasks lived in one place, focus time existed only in my head, and the work I did on GitHub and LeetCode was scattered across separate profiles. Pace brings those signals together so I can plan what I intend to do and review what I actually accomplished each day.
 
-Pace is a single-user productivity application for daily routines, one-time tasks, focus sessions, developer activity, consistency tracking, reminders, and email summaries.
+Pace is a personal productivity application for daily routines, one-time tasks, focus sessions, developer activity, consistency tracking, reminders, and email summaries.
 
 <p align="center">
   <img width="49%" alt="Pace dashboard overview" src="https://github.com/user-attachments/assets/c830e5a2-5f50-4ec8-a02e-629320035f31" />
