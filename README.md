@@ -36,13 +36,31 @@ GitHub synchronization imports authored commits plus pull requests, issues, rele
 
 ```mermaid
 flowchart LR
-    Browser --> API[FastAPI]
-    API --> DB[(PostgreSQL)]
-    API --> External[External APIs: GitHub REST / LeetCode GraphQL]
-    DB --> Scheduler
-    Scheduler --> Kafka
-    Kafka --> Worker
-    Worker --> SMTP[Email]
+    Browser["Browser<br/>HTML, CSS, JavaScript"]
+
+    API["FastAPI application<br/>REST API + Authentication"]
+
+    DB[("PostgreSQL<br/>Application data + Jobs")]
+
+    External["External APIs<br/>GitHub REST + LeetCode GraphQL"]
+
+    Scheduler["Scheduler process<br/>Detects due work"]
+
+    Kafka["Kafka<br/>Main, Retry, DLQ topics"]
+
+    Worker["Worker process<br/>Executes background jobs"]
+
+    SMTP["SMTP server<br/>Email delivery"]
+
+    Browser -->|"HTTP / JSON"| API
+    API --> DB
+    API --> External
+
+    Scheduler -->|"Find reminders and digests"| DB
+    Scheduler -->|"Publish job"| Kafka
+    Kafka -->|"Consume job"| Worker
+    Worker -->|"Read and update job"| DB
+    Worker -->|"Send email"| SMTP
 ```
 
 FastAPI serves the dependency-free frontend and authenticated REST API. PostgreSQL is the source of truth. A separate scheduler claims due reminder and digest work, persists jobs, and publishes them to Kafka. Workers in the `pace-workers` consumer group execute jobs, retry failures up to three times, route exhausted jobs to a dead-letter topic, and deliver email through SMTP.
