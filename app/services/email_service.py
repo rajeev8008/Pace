@@ -1,9 +1,30 @@
+import json
 import os
 import smtplib
 from email.message import EmailMessage
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 
 def send_email(to: str | None, subject: str, body: str) -> None:
+    if api_key := os.getenv("RESEND_API_KEY"):
+        if not to:
+            raise ValueError("preference email is not configured")
+        sender = os.getenv("RESEND_FROM")
+        if not sender:
+            raise ValueError("RESEND_FROM is not configured")
+        request = Request(
+            "https://api.resend.com/emails",
+            data=json.dumps({"from": sender, "to": [to], "subject": subject, "text": body}).encode(),
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=30):
+                return
+        except (HTTPError, URLError, TimeoutError) as error:
+            raise RuntimeError("Email provider request failed") from error
+
     host = os.getenv("SMTP_HOST")
     if not host:
         print(f"[Email] To: {to or '(not configured)'}\nSubject: {subject}\n\n{body}")

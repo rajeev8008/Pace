@@ -30,7 +30,7 @@ GitHub synchronization imports authored commits plus pull requests, issues, rele
 ### Engineering highlights
 
 - Timezone-correct FastAPI and PostgreSQL application with HttpOnly JWT authentication and OAuth
-- Durable scheduler → Kafka → worker pipeline with persisted jobs, retries, and dead-letter routing
+- Durable scheduled jobs with a direct free-hosting path plus optional Kafka workers
 - Unified activity model for Pace completions, GitHub development, and LeetCode practice
 ## Architecture
 
@@ -50,7 +50,9 @@ flowchart LR
 
     Worker["Worker process<br/>Executes background jobs"]
 
-    SMTP["SMTP server<br/>Email delivery"]
+    Email["Email provider<br/>Resend HTTPS or SMTP"]
+
+    Cron["GitHub Actions<br/>Free hosted schedule"]
 
     Browser -->|"HTTP / JSON"| API
     API --> DB
@@ -60,16 +62,19 @@ flowchart LR
     Scheduler -->|"Publish job"| Kafka
     Kafka -->|"Consume job"| Worker
     Worker -->|"Read and update job"| DB
-    Worker -->|"Send email"| SMTP
+    Worker -->|"Send email"| Email
+
+    Cron -->|"Call protected job endpoint"| API
+    API -->|"Run hosted email jobs"| Email
 ```
 
-FastAPI serves the dependency-free frontend and authenticated REST API. PostgreSQL is the source of truth. A separate scheduler claims due reminder and digest work, persists jobs, and publishes them to Kafka. Workers in the `pace-workers` consumer group execute jobs, retry failures up to three times, route exhausted jobs to a dead-letter topic, and deliver email through SMTP.
+FastAPI serves the dependency-free frontend and authenticated REST API. PostgreSQL is the source of truth. The full local architecture can publish jobs through Kafka, while the free hosted setup processes the same durable jobs through a protected scheduled endpoint and sends email through Resend's HTTPS API.
 
 All stored timestamps are timezone-aware UTC values. Daily and weekly calculations use the configured IANA timezone—`Asia/Kolkata` by default—and convert local calendar boundaries to UTC before querying.
 
 ## Stack
 
-Python, FastAPI, Pydantic, PostgreSQL, SQLAlchemy, Alembic, Apache Kafka, confluent-kafka, OAuth 2.0, HS256 JWT, HTML, CSS, JavaScript, SMTP, GitHub Actions, and Render.
+Python, FastAPI, Pydantic, PostgreSQL, SQLAlchemy, Alembic, Apache Kafka, confluent-kafka, OAuth 2.0, HS256 JWT, HTML, CSS, JavaScript, Resend/SMTP, GitHub Actions, GitHub Pages, Neon, and Render.
 
 Authentication uses salted `scrypt` password hashes, seven-day HS256 JWTs stored in HttpOnly cookies, and GitHub or Google OAuth. Pace intentionally permits one owner account.
 
@@ -109,11 +114,28 @@ Run the web application, then start the background components in separate termin
 
 Open `http://127.0.0.1:8000`.
 
-## Deployment
+## Free deployment
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/rajeev8008/Pace)
 
-The current Render Blueprint provisions FastAPI and PostgreSQL. A complete always-on deployment of scheduled email also needs a reachable Kafka broker plus continuously running scheduler and worker services with SMTP secrets. See [ARCHITECTURE.md](ARCHITECTURE.md) for the exact runtime boundaries.
+The repository is configured for this free hobby-project split:
+
+- **GitHub Pages** serves `app/static` at `https://rajeev8008.github.io/Pace/`.
+- **Render** runs FastAPI at `https://pace-rajeev8008.onrender.com`.
+- **Neon** provides persistent free PostgreSQL instead of Render's 30-day free database.
+- **Resend** delivers mail over HTTPS because free Render services block SMTP ports.
+- **GitHub Actions** calls the protected job endpoint every ten minutes so reminders and summaries run without a paid worker or Kafka broker.
+
+Deploy the Render Blueprint, entering `DATABASE_URL`, `CRON_SECRET`, OAuth credentials, `RESEND_API_KEY`, and `RESEND_FROM`. Add the same `CRON_SECRET` as a GitHub Actions repository secret, then enable Pages with **GitHub Actions** as its source.
+
+Register these OAuth callbacks:
+
+```text
+https://pace-rajeev8008.onrender.com/auth/oauth/github/callback
+https://pace-rajeev8008.onrender.com/auth/oauth/google/callback
+```
+
+Free services can cold-start and scheduled GitHub Actions can be delayed, so this is suitable for a personal project rather than time-critical notifications. The Render-hosted `/` remains a same-origin fallback for browsers that block cross-site cookies used by the Pages frontend.
 
 ## Verification
 

@@ -127,7 +127,7 @@ def _set_session(response: Response, user: User) -> dict[str, str | None]:
         max_age=SESSION_SECONDS,
         httponly=True,
         secure=os.getenv("COOKIE_SECURE", "false").lower() == "true",
-        samesite="strict",
+        samesite=os.getenv("COOKIE_SAMESITE", "strict"),
     )
     return _profile(user)
 
@@ -213,7 +213,7 @@ def oauth_callback(provider: str, request: Request, code: str, state: str, db: S
         if not token or not profile.get("email_verified"):
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Google did not provide a verified email")
         user = _oauth_owner(db, provider, profile["sub"], profile["email"], profile.get("name") or profile["email"].split("@", 1)[0], profile["email"].split("@", 1)[0])
-    response = RedirectResponse("/")
+    response = RedirectResponse(os.getenv("FRONTEND_URL", "/"))
     response.delete_cookie(OAUTH_STATE_COOKIE)
     _set_session(response, user)
     return response

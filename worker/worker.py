@@ -19,7 +19,7 @@ HANDLERS = {
 }
 
 
-def process_job(job_id: str, publisher: KafkaPublisher) -> None:
+def process_job(job_id: str, publisher: KafkaPublisher | None) -> None:
     with SessionLocal() as db:
         job = db.scalar(select(Job).where(Job.id == job_id).with_for_update())
         if job is None:
@@ -45,10 +45,11 @@ def process_job(job_id: str, publisher: KafkaPublisher) -> None:
                 job.status = JobStatus.FAILED
                 topic = DEAD_TOPIC
             db.commit()
-            publisher.publish(topic, payload(job), job.id)
-            if job.status == JobStatus.QUEUED:
-                job.published_at = datetime.now(timezone.utc)
-                db.commit()
+            if publisher:
+                publisher.publish(topic, payload(job), job.id)
+                if job.status == JobStatus.QUEUED:
+                    job.published_at = datetime.now(timezone.utc)
+                    db.commit()
             return
         job.status = JobStatus.SUCCESS
         job.error = None

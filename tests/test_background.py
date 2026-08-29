@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["SMTP_HOST"] = ""
+os.environ["RESEND_API_KEY"] = ""
 
 from sqlalchemy.orm import Session
 
@@ -68,6 +69,25 @@ def test_background_flow() -> None:
     process_job(reminder_job_id, publisher)
     with SessionLocal() as db:
         assert db.get(Job, reminder_job_id).status == JobStatus.SUCCESS
+        inline_failed = Job(
+            id=str(uuid4()),
+            type=JobType.TASK_REMINDER,
+            occurrence_key="missing-inline-task",
+            task_id=998,
+            created_at=now,
+        )
+        db.add(inline_failed)
+        db.commit()
+        inline_failed_id = inline_failed.id
+
+    process_job(inline_failed_id, None)
+    with SessionLocal() as db:
+        inline_failed = db.get(Job, inline_failed_id)
+        assert inline_failed.status == JobStatus.QUEUED
+        assert inline_failed.attempts == 1
+        assert inline_failed.published_at is None
+
+    with SessionLocal() as db:
         failed = Job(
             id=str(uuid4()),
             type=JobType.TASK_REMINDER,
