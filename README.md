@@ -36,13 +36,36 @@ GitHub synchronization imports authored commits plus pull requests, issues, rele
 
 ```mermaid
 flowchart LR
-    Browser --> API[FastAPI]
-    API --> DB[(PostgreSQL)]
-    API --> External[External APIs: GitHub REST / LeetCode GraphQL]
-    DB --> Scheduler
-    Scheduler --> Kafka
-    Kafka --> Worker
-    Worker --> Email[Resend HTTPS / SMTP]
+    Browser["Browser<br/>HTML, CSS, JavaScript"]
+
+    API["FastAPI application<br/>REST API + Authentication"]
+
+    DB[("PostgreSQL<br/>Application data + Jobs")]
+
+    External["External APIs<br/>GitHub REST + LeetCode GraphQL"]
+
+    Scheduler["Scheduler process<br/>Detects due work"]
+
+    Kafka["Kafka<br/>Main, Retry, DLQ topics"]
+
+    Worker["Worker process<br/>Executes background jobs"]
+
+    Email["Email provider<br/>Resend HTTPS or SMTP"]
+
+    Cron["GitHub Actions<br/>Free hosted schedule"]
+
+    Browser -->|"HTTP / JSON"| API
+    API --> DB
+    API --> External
+
+    Scheduler -->|"Find reminders and digests"| DB
+    Scheduler -->|"Publish job"| Kafka
+    Kafka -->|"Consume job"| Worker
+    Worker -->|"Read and update job"| DB
+    Worker -->|"Send email"| Email
+
+    Cron -->|"Call protected job endpoint"| API
+    API -->|"Run hosted email jobs"| Email
 ```
 
 FastAPI serves the dependency-free frontend and authenticated REST API. PostgreSQL is the source of truth. The full local architecture can publish jobs through Kafka, while the free hosted setup processes the same durable jobs through a protected scheduled endpoint and sends email through Resend's HTTPS API.
