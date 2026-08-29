@@ -19,8 +19,8 @@ flowchart TB
     Worker --> DB
     Worker --> RetryTopic
     Worker --> DeadTopic[productivity-jobs-dead]
-    Worker --> SMTP[SMTP provider]
-    SMTP --> User
+    Worker --> Email[Resend HTTPS or SMTP]
+    Email --> User
 ```
 
 The request path and background path are deliberately separate:
@@ -117,7 +117,7 @@ The lifecycle is `QUEUED -> RUNNING -> SUCCESS`. A handler failure increments `a
 
 ### Email service
 
-Handlers call one `send_email(to, subject, body)` boundary. With `SMTP_HOST` configured, it supports authenticated SMTP and optional STARTTLS. Without SMTP configuration, it prints the rendered message for local development.
+Handlers call one `send_email(to, subject, body)` boundary. Hosted deployments use the Resend HTTPS API. Local or paid deployments can instead use authenticated SMTP with optional STARTTLS. Without either provider, it prints the rendered message for local development.
 
 ## Core flows
 
@@ -198,14 +198,11 @@ Pace does not currently encrypt application data at the field level, persist OAu
 
 ## Deployment boundary
 
-`render.yaml` currently provisions:
+The free hosted topology uses GitHub Pages for static files, one Render FastAPI web service, Neon PostgreSQL, and Resend's HTTPS API. Exact-origin CORS and `Secure; SameSite=None` HttpOnly session cookies allow the Pages frontend to call FastAPI. OAuth callbacks return to the Pages URL after Pace issues its session cookie.
 
-- one Render FastAPI web service;
-- one Render PostgreSQL database;
-- migrations during web-service startup;
-- generated session signing and configurable OAuth/GitHub secrets.
+GitHub Actions calls `/internal/run-jobs` with a shared bearer secret every ten minutes. That endpoint claims due rows and executes the existing handlers directly, retaining database retries without requiring a free Kafka, scheduler, or worker service. Local and larger deployments can still use the Kafka path unchanged.
 
-That Blueprint does **not** provision Kafka, the scheduler, the worker, or SMTP credentials. Therefore its web features work after deployment, but scheduled email requires those background components to be deployed separately and kept running. Free Render PostgreSQL and web plans also have expiration, sleep, and outbound-SMTP limitations; production operation requires suitable hosted plans or providers.
+The Render-hosted frontend remains available as a same-origin fallback because privacy-focused browsers can block cookies sent from a Pages site to a Render domain. Free-service cold starts and scheduled-action delays mean notification timing is approximate, not production-grade.
 
 ## Verification
 
