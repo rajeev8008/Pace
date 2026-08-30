@@ -43,6 +43,7 @@ def next_weekly(now: datetime, preference: Preference) -> datetime:
 
 def add_job(
     db: Session,
+    user_id: int,
     job_type: JobType,
     occurrence_key: str,
     now: datetime,
@@ -50,6 +51,7 @@ def add_job(
 ) -> Job:
     job = Job(
         id=str(uuid4()),
+        user_id=user_id,
         type=job_type,
         occurrence_key=occurrence_key,
         task_id=task_id,
@@ -75,6 +77,7 @@ def claim_due_work(db: Session, now: datetime | None = None) -> list[Job]:
         jobs.append(
             add_job(
                 db,
+                task.user_id,
                 JobType.TASK_REMINDER,
                 f"reminder:{task.id}:{task.reminder_at.isoformat()}",
                 now,
@@ -83,21 +86,21 @@ def claim_due_work(db: Session, now: datetime | None = None) -> list[Job]:
         )
         task.reminder_processed_at = now
 
-    preference = db.get(Preference, 1, with_for_update=True)
-    if preference and preference.daily_digest_enabled:
-        if preference.next_daily_digest_at is None:
-            preference.next_daily_digest_at = next_daily(now, preference)
-        elif aware(preference.next_daily_digest_at) <= now:
-            due = aware(preference.next_daily_digest_at)
-            jobs.append(add_job(db, JobType.DAILY_DIGEST, f"daily:{due.isoformat()}", now))
-            preference.next_daily_digest_at = next_daily(now, preference)
-    if preference and preference.weekly_summary_enabled:
-        if preference.next_weekly_summary_at is None:
-            preference.next_weekly_summary_at = next_weekly(now, preference)
-        elif aware(preference.next_weekly_summary_at) <= now:
-            due = aware(preference.next_weekly_summary_at)
-            jobs.append(add_job(db, JobType.WEEKLY_SUMMARY, f"weekly:{due.isoformat()}", now))
-            preference.next_weekly_summary_at = next_weekly(now, preference)
+    for preference in db.scalars(select(Preference).with_for_update(skip_locked=True)):
+        if preference.daily_digest_enabled:
+            if preference.next_daily_digest_at is None:
+                preference.next_daily_digest_at = next_daily(now, preference)
+            elif aware(preference.next_daily_digest_at) <= now:
+                due = aware(preference.next_daily_digest_at)
+                jobs.append(add_job(db, preference.user_id, JobType.DAILY_DIGEST, f"daily:{due.isoformat()}", now))
+                preference.next_daily_digest_at = next_daily(now, preference)
+        if preference.weekly_summary_enabled:
+            if preference.next_weekly_summary_at is None:
+                preference.next_weekly_summary_at = next_weekly(now, preference)
+            elif aware(preference.next_weekly_summary_at) <= now:
+                due = aware(preference.next_weekly_summary_at)
+                jobs.append(add_job(db, preference.user_id, JobType.WEEKLY_SUMMARY, f"weekly:{due.isoformat()}", now))
+                preference.next_weekly_summary_at = next_weekly(now, preference)
     db.commit()
     return jobs
 

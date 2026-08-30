@@ -14,14 +14,15 @@ from app.schemas import ActivityUpdate
 def run_checks() -> None:
     Base.metadata.create_all(engine)
     with Session(engine) as db:
-        db.add(Preference(id=1, timezone="Asia/Kolkata"))
-        activity = Activity(type="TASK", title="Original", detail="Done", occurred_at=datetime.now(timezone.utc))
+        db.add(Preference(user_id=1, timezone="Asia/Kolkata"))
+        activity = Activity(user_id=1, type="TASK", title="Original", detail="Done", occurred_at=datetime.now(timezone.utc))
         db.add(activity); db.commit(); db.refresh(activity)
-        assert today(db)[0].title == "Original"
-        assert recent(84, db)[0].title == "Original"
-        assert update(activity.id, ActivityUpdate(title="Edited"), db).title == "Edited"
-        assert delete(activity.id, db).status_code == 204
-        assert today(db) == []
+        assert today(1, db)[0].title == "Original"
+        assert recent(84, 1, db)[0].title == "Original"
+        assert today(2, db) == []
+        assert update(activity.id, ActivityUpdate(title="Edited"), 1, db).title == "Edited"
+        assert delete(activity.id, 1, db).status_code == 204
+        assert today(1, db) == []
 
 
 if __name__ == "__main__":

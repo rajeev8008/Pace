@@ -16,21 +16,22 @@ from app.schemas import FocusSessionStart, FocusSessionStop
 def test_focus_sessions() -> None:
     Base.metadata.create_all(engine)
     with Session(engine) as db:
-        routine = DailyTask(title="Practice DSA", created_at=datetime.now(timezone.utc))
+        routine = DailyTask(user_id=1, title="Practice DSA", created_at=datetime.now(timezone.utc))
         db.add(routine); db.commit()
-        active = start_focus_session(FocusSessionStart(category="Deep work", daily_task_id=routine.id, notes="No distractions"), db)
+        active = start_focus_session(FocusSessionStart(category="Deep work", daily_task_id=routine.id, notes="No distractions"), 1, db)
         assert active.ended_at is None
         assert active.duration_seconds is None
-        assert get_active_focus_session(db).id == active.id
+        assert get_active_focus_session(1, db).id == active.id
+        assert get_active_focus_session(2, db) is None
 
         try:
-            start_focus_session(FocusSessionStart(category="Second"), db)
+            start_focus_session(FocusSessionStart(category="Second"), 1, db)
         except HTTPException as exc:
             assert exc.status_code == 409
         else:
             raise AssertionError("A second active focus session was allowed")
 
-        db.add(FocusSession(category="Bypass", started_at=datetime.now(timezone.utc), active_slot=True))
+        db.add(FocusSession(user_id=1, category="Bypass", started_at=datetime.now(timezone.utc), active_slot=True))
         try:
             db.commit()
         except IntegrityError:
@@ -38,25 +39,25 @@ def test_focus_sessions() -> None:
         else:
             raise AssertionError("The database allowed a second active focus session")
 
-        stopped = stop_focus_session(active.id, FocusSessionStop(notes="Finished"), db)
+        stopped = stop_focus_session(active.id, FocusSessionStop(notes="Finished"), 1, db)
         assert stopped.ended_at is not None
         assert stopped.duration_seconds is not None and stopped.duration_seconds >= 0
         assert stopped.notes == "Finished"
         activity = db.query(Activity).filter_by(source_type="focus", source_id=active.id).one()
         assert activity.title == "Practice DSA"
         assert activity.detail.startswith("Deep work · Focused for")
-        assert get_active_focus_session(db) is None
-        assert list_focus_sessions(db)[0].id == active.id
+        assert get_active_focus_session(1, db) is None
+        assert list_focus_sessions(1, db)[0].id == active.id
 
         try:
-            stop_focus_session(active.id, None, db)
+            stop_focus_session(active.id, None, 1, db)
         except HTTPException as exc:
             assert exc.status_code == 409
         else:
             raise AssertionError("A completed focus session was stopped twice")
 
         try:
-            start_focus_session(FocusSessionStart(daily_task_id=999), db)
+            start_focus_session(FocusSessionStart(daily_task_id=999), 1, db)
         except HTTPException as exc:
             assert exc.status_code == 404
         else:

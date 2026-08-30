@@ -78,7 +78,7 @@ All stored timestamps are timezone-aware UTC values. Daily and weekly calculatio
 
 Python, FastAPI, Pydantic, PostgreSQL, SQLAlchemy, Alembic, Apache Kafka, confluent-kafka, OAuth 2.0, HS256 JWT, HTML, CSS, JavaScript, Resend/SMTP, GitHub Actions, GitHub Pages, Neon, and Render.
 
-Authentication uses salted `scrypt` password hashes, seven-day HS256 JWTs stored in HttpOnly cookies, and GitHub or Google OAuth. Pace intentionally permits one owner account.
+Authentication uses salted `scrypt` password hashes, seven-day HS256 JWTs stored in HttpOnly cookies, and GitHub or Google OAuth. Every account has an isolated private workspace.
 
 ## Project structure
 

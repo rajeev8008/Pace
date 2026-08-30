@@ -20,9 +20,8 @@ class TaskPriority(str, Enum):
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = (CheckConstraint("id = 1", name="single_user_account"),)
 
-    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(64), unique=True)
     email: Mapped[str | None] = mapped_column(String(320), unique=True)
     display_name: Mapped[str] = mapped_column(String(100))
@@ -40,6 +39,7 @@ class Task(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     title: Mapped[str] = mapped_column(String(200))
     description: Mapped[str | None] = mapped_column(Text)
     status: Mapped[TaskStatus] = mapped_column(
@@ -72,14 +72,14 @@ class Weekday(str, Enum):
 class Preference(Base):
     __tablename__ = "preferences"
     __table_args__ = (
-        CheckConstraint("id = 1", name="single_preferences_row"),
         CheckConstraint(
             "weekly_summary_day IN ('MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY')",
             name="weekday",
         ),
     )
 
-    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True)
     email: Mapped[str | None] = mapped_column(String(320))
     timezone: Mapped[str] = mapped_column(
         String(64), default="Asia/Kolkata", server_default="Asia/Kolkata"
@@ -122,16 +122,18 @@ class Job(Base):
             name="job_status",
         ),
         CheckConstraint("attempts BETWEEN 0 AND 3", name="job_attempts"),
+        UniqueConstraint("user_id", "occurrence_key", name="job_occurrence_once_per_user"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     type: Mapped[JobType] = mapped_column(SAEnum(JobType, native_enum=False))
     status: Mapped[JobStatus] = mapped_column(
         SAEnum(JobStatus, native_enum=False),
         default=JobStatus.QUEUED,
         server_default=JobStatus.QUEUED.value,
     )
-    occurrence_key: Mapped[str] = mapped_column(String(200), unique=True)
+    occurrence_key: Mapped[str] = mapped_column(String(200))
     task_id: Mapped[int | None] = mapped_column(Integer)
     attempts: Mapped[int] = mapped_column(default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -145,6 +147,7 @@ class DailyTask(Base):
     __tablename__ = "daily_tasks"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     title: Mapped[str] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
@@ -166,10 +169,11 @@ class FocusSession(Base):
         CheckConstraint("ended_at IS NULL OR ended_at >= started_at", name="focus_time_order"),
         CheckConstraint("(ended_at IS NULL) = (duration_seconds IS NULL)", name="focus_completion_state"),
         CheckConstraint("active_slot IS NULL OR active_slot = true", name="focus_active_slot_value"),
-        UniqueConstraint("active_slot", name="one_active_focus_session"),
+        UniqueConstraint("user_id", "active_slot", name="one_active_focus_session_per_user"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     category: Mapped[str | None] = mapped_column(String(100))
     task_id: Mapped[int | None] = mapped_column(ForeignKey("tasks.id", ondelete="SET NULL"), index=True)
     daily_task_id: Mapped[int | None] = mapped_column(ForeignKey("daily_tasks.id", ondelete="SET NULL"), index=True)
@@ -184,27 +188,30 @@ class Activity(Base):
     __tablename__ = "activities"
     __table_args__ = (
         CheckConstraint("type IN ('TASK', 'ROUTINE', 'FOCUS', 'GITHUB', 'LEETCODE')", name="activity_type"),
-        UniqueConstraint("source_type", "source_id", name="activity_source_once"),
+        UniqueConstraint("user_id", "source_type", "source_id", name="activity_source_once_per_user"),
+        UniqueConstraint("user_id", "external_id", name="activity_external_once_per_user"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     type: Mapped[str] = mapped_column(String(20), index=True)
     source_type: Mapped[str | None] = mapped_column(String(30))
     source_id: Mapped[int | None] = mapped_column(Integer)
     title: Mapped[str] = mapped_column(String(200))
     detail: Mapped[str | None] = mapped_column(Text)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
-    external_id: Mapped[str | None] = mapped_column(String(200), unique=True)
+    external_id: Mapped[str | None] = mapped_column(String(200))
 
 
 class ExternalProfile(Base):
     __tablename__ = "external_profiles"
     __table_args__ = (
         CheckConstraint("provider IN ('GITHUB', 'LEETCODE')", name="profile_provider"),
-        UniqueConstraint("provider", name="one_profile_per_provider"),
+        UniqueConstraint("user_id", "provider", name="one_profile_per_provider_per_user"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     provider: Mapped[str] = mapped_column(String(20))
     username: Mapped[str] = mapped_column(String(100))
     profile_url: Mapped[str] = mapped_column(String(500))

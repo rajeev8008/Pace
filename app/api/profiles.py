@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.auth import require_auth
 from app.models import Activity, ExternalProfile
 from app.schemas import ExternalProfileCreate, ExternalProfileRead
 
@@ -92,16 +93,16 @@ def leetcode(profile: ExternalProfile) -> list[dict]:
 
 
 @router.get("", response_model=list[ExternalProfileRead])
-def list_profiles(db: Session = Depends(get_db)) -> list[ExternalProfile]:
-    return list(db.scalars(select(ExternalProfile).order_by(ExternalProfile.provider)))
+def list_profiles(user_id: int = Depends(require_auth), db: Session = Depends(get_db)) -> list[ExternalProfile]:
+    return list(db.scalars(select(ExternalProfile).where(ExternalProfile.user_id == user_id).order_by(ExternalProfile.provider)))
 
 
 @router.post("", response_model=ExternalProfileRead)
-def connect(payload: ExternalProfileCreate, db: Session = Depends(get_db)) -> ExternalProfile:
+def connect(payload: ExternalProfileCreate, user_id: int = Depends(require_auth), db: Session = Depends(get_db)) -> ExternalProfile:
     username = username_from_url(payload.provider, payload.profile_url)
-    profile = db.scalar(select(ExternalProfile).where(ExternalProfile.provider == payload.provider))
+    profile = db.scalar(select(ExternalProfile).where(ExternalProfile.user_id == user_id, ExternalProfile.provider == payload.provider))
     if profile is None:
-        profile = ExternalProfile(provider=payload.provider, username=username, profile_url=payload.profile_url)
+        profile = ExternalProfile(user_id=user_id, provider=payload.provider, username=username, profile_url=payload.profile_url)
         db.add(profile)
     else:
         profile.username, profile.profile_url, profile.last_synced_at = username, payload.profile_url, None
@@ -110,8 +111,8 @@ def connect(payload: ExternalProfileCreate, db: Session = Depends(get_db)) -> Ex
 
 
 @router.post("/{profile_id}/sync", response_model=ExternalProfileRead)
-def sync(profile_id: int, db: Session = Depends(get_db)) -> ExternalProfile:
-    profile = db.get(ExternalProfile, profile_id)
+def sync(profile_id: int, user_id: int = Depends(require_auth), db: Session = Depends(get_db)) -> ExternalProfile:
+    profile = db.scalar(select(ExternalProfile).where(ExternalProfile.id == profile_id, ExternalProfile.user_id == user_id))
     if profile is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Profile not found")
     now = datetime.now(timezone.utc)
@@ -128,23 +129,23 @@ def sync(profile_id: int, db: Session = Depends(get_db)) -> ExternalProfile:
     commits = [item for item in items if item["external_id"].startswith("github:commit:")]
     if commits:
         oldest = min(item["occurred_at"] for item in commits)
-        for activity in db.scalars(select(Activity).where(Activity.type == "GITHUB", Activity.title.like("%GitHub commit%"), Activity.occurred_at >= oldest)):
+        for activity in db.scalars(select(Activity).where(Activity.user_id == user_id, Activity.type == "GITHUB", Activity.title.like("%GitHub commit%"), Activity.occurred_at >= oldest)):
             db.delete(activity)
         db.flush()
-    known = {activity.external_id: activity for activity in db.scalars(select(Activity).where(Activity.external_id.in_([item["external_id"] for item in items])))} if items else {}
+    known = {activity.external_id: activity for activity in db.scalars(select(Activity).where(Activity.user_id == user_id, Activity.external_id.in_([item["external_id"] for item in items])))} if items else {}
     for item in items:
         if activity := known.get(item["external_id"]):
             activity.title, activity.detail = item["title"], item["detail"]
         else:
-            db.add(Activity(type=profile.provider, source_type="profile", source_id=None, **item))
+            db.add(Activity(user_id=user_id, type=profile.provider, source_type="profile", source_id=None, **item))
     profile.last_synced_at = now
     db.commit(); db.refresh(profile)
     return profile
 
 
 @router.delete("/{profile_id}", status_code=status.HTTP_204_NO_CONTENT)
-def disconnect(profile_id: int, db: Session = Depends(get_db)) -> Response:
-    profile = db.get(ExternalProfile, profile_id)
+def disconnect(profile_id: int, user_id: int = Depends(require_auth), db: Session = Depends(get_db)) -> Response:
+    profile = db.scalar(select(ExternalProfile).where(ExternalProfile.id == profile_id, ExternalProfile.user_id == user_id))
     if profile is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Profile not found")
     db.delete(profile); db.commit()

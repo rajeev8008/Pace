@@ -5,6 +5,7 @@ os.environ["DATABASE_URL"] = "sqlite://"
 
 from sqlalchemy.orm import Session
 from pydantic import ValidationError
+from fastapi import HTTPException
 
 from app.api.tasks import create_task, delete_task, get_task, list_tasks, update_task
 from app.database import Base, engine
@@ -27,19 +28,26 @@ def test_phase1_crud() -> None:
             pass
         else:
             raise AssertionError("naive timestamp was accepted")
-        created = create_task(payload, db)
+        created = create_task(payload, 1, db)
         assert created.title == "Study Kafka"
-        assert get_task(created.id, db) is created
-        assert list_tasks(db) == [created]
+        assert get_task(created.id, 1, db) is created
+        assert list_tasks(1, db) == [created]
+        assert list_tasks(2, db) == []
+        try:
+            get_task(created.id, 2, db)
+        except HTTPException as exc:
+            assert exc.status_code == 404
+        else:
+            raise AssertionError("Another user accessed a private task")
 
         updated = update_task(
             created.id,
             TaskUpdate(status=TaskStatus.COMPLETED),
-            db,
+            1, db,
         )
         assert updated.completed_at is not None
-        assert delete_task(created.id, db).status_code == 204
-        assert list_tasks(db) == []
+        assert delete_task(created.id, 1, db).status_code == 204
+        assert list_tasks(1, db) == []
 
 
 if __name__ == "__main__":

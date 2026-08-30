@@ -81,25 +81,25 @@ def verify_password(password: str, encoded: str) -> bool:
         return False
 
 
-def create_session(username: str) -> str:
+def create_session(user_id: int) -> str:
     now = int(time.time())
     header = _encode(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
-    payload = _encode(json.dumps({"sub": username, "iat": now, "exp": now + SESSION_SECONDS}, separators=(",", ":")).encode())
+    payload = _encode(json.dumps({"sub": user_id, "iat": now, "exp": now + SESSION_SECONDS}, separators=(",", ":")).encode())
     signing_input = f"{header}.{payload}"
     signature = _encode(hmac.new(_setting("SESSION_SECRET").encode(), signing_input.encode(), hashlib.sha256).digest())
     return f"{signing_input}.{signature}"
 
 
-def verify_session(token: str) -> str:
+def verify_session(token: str) -> int:
     try:
         header, payload, signature = token.split(".")
         metadata = json.loads(_decode(header))
         signing_input = f"{header}.{payload}"
         expected = _encode(hmac.new(_setting("SESSION_SECRET").encode(), signing_input.encode(), hashlib.sha256).digest())
         data = json.loads(_decode(payload))
-        if metadata != {"alg": "HS256", "typ": "JWT"} or not hmac.compare_digest(signature, expected) or data["exp"] < time.time() or not isinstance(data.get("sub"), str):
+        if metadata != {"alg": "HS256", "typ": "JWT"} or not hmac.compare_digest(signature, expected) or data["exp"] < time.time() or not isinstance(data.get("sub"), int):
             raise ValueError
-        return str(data["sub"])
+        return data["sub"]
     except (ValueError, KeyError, TypeError, json.JSONDecodeError):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required") from None
 
@@ -107,13 +107,13 @@ def verify_session(token: str) -> str:
 def require_auth(
     pace_session: str | None = Cookie(default=None, alias=COOKIE_NAME),
     db: Session = Depends(get_db),
-) -> str:
+) -> int:
     if not pace_session:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")
-    username = verify_session(pace_session)
-    if not db.scalar(select(User).where(User.username == username)):
+    user_id = verify_session(pace_session)
+    if not db.get(User, user_id):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")
-    return username
+    return user_id
 
 
 def _profile(user: User) -> dict[str, str | None]:
@@ -123,7 +123,7 @@ def _profile(user: User) -> dict[str, str | None]:
 def _set_session(response: Response, user: User) -> dict[str, str | None]:
     response.set_cookie(
         COOKIE_NAME,
-        create_session(user.username),
+        create_session(user.id),
         max_age=SESSION_SECONDS,
         httponly=True,
         secure=os.getenv("COOKIE_SECURE", "false").lower() == "true",
@@ -152,14 +152,13 @@ def _request_json(url: str, *, data: dict[str, str] | None = None, token: str | 
 def _oauth_owner(db: Session, provider: str, identity: str, email: str, name: str, username: str) -> User:
     field = User.github_id if provider == "github" else User.google_id
     user = db.scalar(select(User).where(field == identity))
-    owner = db.scalar(select(User).limit(1))
-    if user is None and owner is not None and (not owner.email or owner.email.lower() != email.lower()):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "This OAuth account does not match the Pace owner email")
     if user is None:
-        user = owner
+        user = db.scalar(select(User).where(User.email == email.lower()))
     if user is None:
-        clean_username = re.sub(r"[^A-Za-z0-9_.-]", "", username)[:64] or "pace-user"
-        user = User(id=1, username=clean_username if len(clean_username) >= 3 else f"{clean_username}pace", email=email.lower(), display_name=name[:100], password_hash=None, created_at=datetime.now(timezone.utc))
+        base = re.sub(r"[^A-Za-z0-9_.-]", "", username)[:64] or "pace-user"
+        base = base if len(base) >= 3 else f"{base}pace"
+        clean_username = base if not db.scalar(select(User.id).where(User.username == base)) else f"{base[:57]}-{identity[-6:]}"
+        user = User(username=clean_username, email=email.lower(), display_name=name[:100], password_hash=None, created_at=datetime.now(timezone.utc))
         db.add(user)
     setattr(user, "github_id" if provider == "github" else "google_id", identity)
     user.email = user.email or email.lower()
@@ -198,9 +197,9 @@ def oauth_callback(provider: str, request: Request, code: str, state: str, db: S
         if not token or not verified:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "GitHub did not provide a verified email")
         user = _oauth_owner(db, provider, str(profile["id"]), verified, profile.get("name") or profile["login"], profile["login"])
-        connection = db.scalar(select(ExternalProfile).where(ExternalProfile.provider == "GITHUB"))
+        connection = db.scalar(select(ExternalProfile).where(ExternalProfile.user_id == user.id, ExternalProfile.provider == "GITHUB"))
         if connection is None:
-            db.add(ExternalProfile(provider="GITHUB", username=profile["login"], profile_url=profile["html_url"]))
+            db.add(ExternalProfile(user_id=user.id, provider="GITHUB", username=profile["login"], profile_url=profile["html_url"]))
         else:
             connection.username, connection.profile_url = profile["login"], profile["html_url"]
         db.commit()
@@ -229,15 +228,13 @@ def oauth_providers() -> dict[str, bool]:
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
 def signup(credentials: SignupRequest, response: Response, db: Session = Depends(get_db)) -> dict[str, str | None]:
-    if db.scalar(select(User.id).limit(1)):
-        raise HTTPException(status.HTTP_409_CONFLICT, "This Pace account has already been created")
-    user = User(id=1, username=credentials.username, email=credentials.email, display_name=credentials.display_name, password_hash=hash_password(credentials.password), created_at=datetime.now(timezone.utc))
+    user = User(username=credentials.username, email=credentials.email, display_name=credentials.display_name, password_hash=hash_password(credentials.password), created_at=datetime.now(timezone.utc))
     db.add(user)
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status.HTTP_409_CONFLICT, "This Pace account has already been created") from None
+        raise HTTPException(status.HTTP_409_CONFLICT, "Username or email is already registered") from None
     return _set_session(response, user)
 
 
@@ -261,5 +258,5 @@ def logout(response: Response) -> None:
 
 
 @router.get("/me")
-def me(username: str = Depends(require_auth), db: Session = Depends(get_db)) -> dict[str, str | None]:
-    return _profile(db.scalar(select(User).where(User.username == username)))
+def me(user_id: int = Depends(require_auth), db: Session = Depends(get_db)) -> dict[str, str | None]:
+    return _profile(db.get(User, user_id))

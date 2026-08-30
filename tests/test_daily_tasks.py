@@ -12,15 +12,15 @@ from app.schemas import DailyTaskCompletionUpdate, DailyTaskCreate
 def test_daily_tasks() -> None:
     Base.metadata.create_all(engine)
     with Session(engine) as db:
-        task = create_daily_task(DailyTaskCreate(title="Exercise"), db)
+        task = create_daily_task(DailyTaskCreate(title="Exercise"), 1, db)
         assert task.completed_today is False
-        completed = set_today(task.id, DailyTaskCompletionUpdate(completed=True), db)
+        completed = set_today(task.id, DailyTaskCompletionUpdate(completed=True), 1, db)
         assert completed.completed_today is True
         assert len(completed.completions) == 1
-        reopened = set_today(task.id, DailyTaskCompletionUpdate(completed=False), db)
+        reopened = set_today(task.id, DailyTaskCompletionUpdate(completed=False), 1, db)
         assert reopened.completed_today is False
-        assert delete_daily_task(task.id, db).status_code == 204
-        assert list_daily_tasks(db) == []
+        assert delete_daily_task(task.id, 1, db).status_code == 204
+        assert list_daily_tasks(1, db) == []
 
 
 if __name__ == "__main__":

@@ -13,7 +13,7 @@ from app.schemas import PreferenceUpdate
 def test_preferences() -> None:
     Base.metadata.create_all(engine)
     with Session(engine) as db:
-        defaults = read_preferences(db)
+        defaults = read_preferences(1, db)
         assert defaults.timezone == "Asia/Kolkata"
         assert defaults.daily_digest_enabled is False
 
@@ -27,10 +27,11 @@ def test_preferences() -> None:
                 weekly_summary_day="MONDAY",
                 weekly_summary_time="08:00",
             ),
-            db,
+            1, db,
         )
         assert updated.email == "user@example.com"
         assert updated.daily_digest_time.hour == 20
+        assert read_preferences(2, db).daily_digest_enabled is False
 
         try:
             PreferenceUpdate(timezone="Not/A_Real_Zone")

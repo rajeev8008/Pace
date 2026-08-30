@@ -15,9 +15,9 @@ def run_checks() -> None:
     signup = SignupRequest(username="rajeev", email="RAJEEV@example.com", display_name=" Rajeev ", password="example111")
     assert signup.email == "rajeev@example.com"
     assert signup.display_name == "Rajeev"
-    token = create_session("rajeev")
+    token = create_session(1)
     assert token.count(".") == 2
-    assert verify_session(token) == "rajeev"
+    assert verify_session(token) == 1
     try:
         verify_session(token + "changed")
     except HTTPException as exc:
@@ -27,7 +27,7 @@ def run_checks() -> None:
     os.environ["COOKIE_SECURE"] = "true"
     os.environ["COOKIE_SAMESITE"] = "none"
     response = Response()
-    _set_session(response, User(username="rajeev", email="rajeev@example.com", display_name="Rajeev"))
+    _set_session(response, User(id=1, username="rajeev", email="rajeev@example.com", display_name="Rajeev"))
     assert "HttpOnly" in response.headers["set-cookie"]
     assert "SameSite=none" in response.headers["set-cookie"]
     assert "Secure" in response.headers["set-cookie"]

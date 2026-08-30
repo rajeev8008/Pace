@@ -5,6 +5,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.auth import require_auth
 from app.models import Activity, Task, TaskStatus
 from app.schemas import TaskCreate, TaskRead, TaskUpdate
 
@@ -12,16 +13,16 @@ from app.schemas import TaskCreate, TaskRead, TaskUpdate
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
-def get_task_or_404(task_id: int, db: Session) -> Task:
-    task = db.get(Task, task_id)
+def get_task_or_404(task_id: int, user_id: int, db: Session) -> Task:
+    task = db.scalar(select(Task).where(Task.id == task_id, Task.user_id == user_id))
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
     return task
 
 
 @router.post("", response_model=TaskRead, status_code=status.HTTP_201_CREATED)
-def create_task(payload: TaskCreate, db: Session = Depends(get_db)) -> Task:
-    task = Task(**payload.model_dump(), created_at=datetime.now(timezone.utc))
+def create_task(payload: TaskCreate, user_id: int = Depends(require_auth), db: Session = Depends(get_db)) -> Task:
+    task = Task(user_id=user_id, **payload.model_dump(), created_at=datetime.now(timezone.utc))
     db.add(task)
     db.commit()
     db.refresh(task)
@@ -29,18 +30,18 @@ def create_task(payload: TaskCreate, db: Session = Depends(get_db)) -> Task:
 
 
 @router.get("", response_model=list[TaskRead])
-def list_tasks(db: Session = Depends(get_db)) -> list[Task]:
-    return list(db.scalars(select(Task).order_by(Task.id)))
+def list_tasks(user_id: int = Depends(require_auth), db: Session = Depends(get_db)) -> list[Task]:
+    return list(db.scalars(select(Task).where(Task.user_id == user_id).order_by(Task.id)))
 
 
 @router.get("/{task_id}", response_model=TaskRead)
-def get_task(task_id: int, db: Session = Depends(get_db)) -> Task:
-    return get_task_or_404(task_id, db)
+def get_task(task_id: int, user_id: int = Depends(require_auth), db: Session = Depends(get_db)) -> Task:
+    return get_task_or_404(task_id, user_id, db)
 
 
 @router.patch("/{task_id}", response_model=TaskRead)
-def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)) -> Task:
-    task = get_task_or_404(task_id, db)
+def update_task(task_id: int, payload: TaskUpdate, user_id: int = Depends(require_auth), db: Session = Depends(get_db)) -> Task:
+    task = get_task_or_404(task_id, user_id, db)
     changes = payload.model_dump(exclude_unset=True)
     if not changes:
         raise HTTPException(status_code=422, detail="At least one field is required")
@@ -48,10 +49,10 @@ def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)
     new_status = changes.get("status")
     if new_status is TaskStatus.COMPLETED and task.status is not TaskStatus.COMPLETED:
         task.completed_at = datetime.now(timezone.utc)
-        db.add(Activity(type="TASK", source_type="task", source_id=task.id, title=changes.get("title", task.title), detail="Scheduled task completed", occurred_at=task.completed_at))
+        db.add(Activity(user_id=user_id, type="TASK", source_type="task", source_id=task.id, title=changes.get("title", task.title), detail="Scheduled task completed", occurred_at=task.completed_at))
     elif new_status is TaskStatus.PENDING:
         task.completed_at = None
-        db.execute(delete(Activity).where(Activity.source_type == "task", Activity.source_id == task.id))
+        db.execute(delete(Activity).where(Activity.user_id == user_id, Activity.source_type == "task", Activity.source_id == task.id))
 
     for field, value in changes.items():
         setattr(task, field, value)
@@ -63,7 +64,7 @@ def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)
 
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_task(task_id: int, db: Session = Depends(get_db)) -> Response:
-    db.delete(get_task_or_404(task_id, db))
+def delete_task(task_id: int, user_id: int = Depends(require_auth), db: Session = Depends(get_db)) -> Response:
+    db.delete(get_task_or_404(task_id, user_id, db))
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
