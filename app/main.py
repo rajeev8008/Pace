@@ -1,5 +1,6 @@
 import hmac
 import os
+from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,9 +19,10 @@ from scheduler.scheduler import run_inline_once
 
 app = FastAPI(title="Pace")
 if frontend_url := os.getenv("FRONTEND_URL", "").rstrip("/"):
+    frontend_origin = f"{urlsplit(frontend_url).scheme}://{urlsplit(frontend_url).netloc}"
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[frontend_url],
+        allow_origins=[frontend_origin],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
