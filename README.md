@@ -4,6 +4,8 @@
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 [![MIT License](https://img.shields.io/badge/License-MIT-2ea44f.svg)](LICENSE)
 
+**Live deployment:** [pace-rajeev8008.onrender.com](https://pace-rajeev8008.onrender.com/)
+
 I wanted one honest view of my productivity. My daily routines and scheduled tasks lived in one place, focus time existed only in my head, and the work I did on GitHub and LeetCode was scattered across separate profiles. Pace brings those signals together so I can plan what I intend to do and review what I actually accomplished each day. Daily digests and weekly summaries turn that history into a simple reflection I can read, recognize my progress, and feel accomplished.
 
 Pace is a personal productivity platform for daily routines, one-time tasks, focus sessions, developer activity, consistency tracking, reminders, and email summaries.
