@@ -16,7 +16,7 @@ services:
       - key: COOKIE_SAMESITE
         value: none
       - key: FRONTEND_URL
-        value: https://rajeev8008.github.io/Pace
+        value: https://pace-rajeev8008.onrender.com
       - key: OAUTH_BASE_URL
         value: https://pace-rajeev8008.onrender.com
       - key: CRON_SECRET

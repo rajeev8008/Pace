@@ -1,1 +1,2 @@
-window.PACE_API_URL = location.hostname.endsWith("github.io") ? "https://pace-rajeev8008.onrender.com" : "";
+if (location.hostname.endsWith("github.io")) location.replace("https://pace-rajeev8008.onrender.com");
+window.PACE_API_URL = "";
