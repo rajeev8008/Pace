@@ -27,7 +27,7 @@ def test_background_flow() -> None:
     Base.metadata.create_all(engine)
     now = datetime.now(timezone.utc)
     with Session(engine) as db:
-        db.add(Preference(user_id=1, email="user@example.com"))
+        db.add_all([Preference(user_id=1, email="user@example.com"), Preference(user_id=2, email="friend@example.com")])
         task = Task(
             user_id=1,
             title="Due reminder",
@@ -37,10 +37,10 @@ def test_background_flow() -> None:
         outsider_task = Task(user_id=2, title="Other user's reminder", reminder_at=now - timedelta(minutes=1), created_at=now)
         db.add_all([task, outsider_task])
         db.commit()
-        assert len(claim_due_work(db, now)) == 1
+        assert len(claim_due_work(db, now)) == 2
         assert len(claim_due_work(db, now)) == 0
         reminder_job = db.query(Job).filter_by(task_id=task.id).one()
-        assert db.query(Job).filter_by(task_id=outsider_task.id).first() is None
+        second_reminder_job = db.query(Job).filter_by(task_id=outsider_task.id).one()
         settings = db.query(Preference).filter_by(user_id=1).one()
         settings.daily_digest_enabled = True
         settings.weekly_summary_enabled = True
@@ -82,11 +82,14 @@ def test_background_flow() -> None:
         assert "LeetCode activity: 1" in summary
         assert "consistency is your real progress multiplier" in summary
         reminder_job_id = reminder_job.id
+        second_reminder_job_id = second_reminder_job.id
 
     publisher = FakePublisher()
     process_job(reminder_job_id, publisher)
+    process_job(second_reminder_job_id, publisher)
     with SessionLocal() as db:
         assert db.get(Job, reminder_job_id).status == JobStatus.SUCCESS
+        assert db.get(Job, second_reminder_job_id).status == JobStatus.SUCCESS
         retryable = Job(
             id=str(uuid4()),
             user_id=1,
@@ -106,18 +109,6 @@ def test_background_flow() -> None:
         assert retryable.attempts == 1
         assert retryable.published_at is None
 
-        outsider_job = Job(id=str(uuid4()), user_id=2, type=JobType.DAILY_DIGEST, occurrence_key="non-owner", created_at=now)
-        db.add(outsider_job)
-        db.commit()
-        outsider_job_id = outsider_job.id
-
-    process_job(outsider_job_id, publisher)
-    with SessionLocal() as db:
-        outsider_job = db.get(Job, outsider_job_id)
-        assert outsider_job.status == JobStatus.FAILED
-        assert outsider_job.error == "Job does not belong to the Pace owner"
-
-    with SessionLocal() as db:
         failed = Job(
             id=str(uuid4()),
             user_id=1,

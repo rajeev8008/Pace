@@ -8,11 +8,11 @@ Pace is a personal productivity platform I built to combine planning and complet
 
 The interactive application is a modular FastAPI backend with a plain HTML, CSS, and JavaScript frontend. FastAPI validates requests with Pydantic, SQLAlchemy manages persistence, PostgreSQL is the source of truth, and Alembic handles schema changes.
 
-Authentication supports one owner through a local password or optional GitHub and Google OAuth. Passwords use salted scrypt hashes. After login, Pace creates its own seven-day HS256 JWT in an HttpOnly cookie. OAuth proves the owner's identity, but Pace still controls its own session.
+Authentication supports local accounts or optional GitHub and Google OAuth. Passwords use salted scrypt hashes. After login, Pace creates its own seven-day HS256 JWT in an HttpOnly cookie. OAuth proves identity, but Pace still controls its own session.
 
 The most important backend design is the reminder pipeline. A Python scheduler finds due reminders and summaries, locks the relevant PostgreSQL rows, and creates durable jobs with unique occurrence keys. It publishes only the job ID to Kafka. A consumer-group worker locks that job, builds the email, sends it through SMTP, and records success or failure. Failures have two bounded retries, followed by a failed state and dead-letter topic.
 
-I store timestamps in UTC but interpret schedules and daily boundaries using the owner's IANA timezone. Database locks, constraints, occurrence keys, and explicit Kafka delivery confirmation reduce duplicate work.
+I store timestamps in UTC but interpret schedules and daily boundaries using each user's IANA timezone. Database locks, constraints, occurrence keys, and explicit Kafka delivery confirmation reduce duplicate work.
 
 GitHub Actions CI starts PostgreSQL 17, applies and checks migrations, compiles the project, and runs focused subsystem checks. The main limitations are that Kafka must be running, SMTP is required for real mail, retry messages have no delayed backoff, and email delivery is at-least-once rather than exactly-once.
 
@@ -24,7 +24,7 @@ The product has five main areas. Scheduled tasks store priority, due time, and r
 
 At a high level, the browser sends JSON requests to FastAPI. Pydantic validates input, SQLAlchemy executes queries, and PostgreSQL stores durable state. I used a modular monolith because the interactive features are cohesive and do not need separate network services. The frontend is dependency-free HTML, CSS, and JavaScript because the state and number of screens are small.
 
-Pace intentionally has one owner. The first matching `APP_USERNAME` and `APP_PASSWORD` login creates owner ID 1 with a salted scrypt password hash. GitHub and Google OAuth are optional. OAuth callbacks validate a random state cookie and require the owner's verified email. Pace then issues its own signed JWT in an HttpOnly, SameSite Strict cookie. Every protected operation receives owner ID from the verified token rather than trusting browser input.
+Pace supports multiple private accounts. Local signup stores a salted scrypt password hash, while GitHub and Google OAuth are optional. OAuth callbacks validate a random state cookie, match provider identity or verified email, and create an account when needed. Pace then issues its own signed JWT in an HttpOnly, SameSite Strict cookie. Every protected operation receives the user ID from the verified token rather than trusting browser input.
 
 The key architecture is scheduler to Kafka to worker. The scheduler is a continuously running Python process. It checks task reminders and digest preferences, converts local schedules to UTC, and uses row locks with skip-locked behavior while claiming due work. Each occurrence becomes a PostgreSQL Job with a stable unique key. PostgreSQL is important because Kafka is a transport, not the business source of truth.
 
@@ -70,21 +70,21 @@ Explain Job as durable background state: type, queued/running/success/failed sta
 
 ### 7:30–9:30 — Authentication
 
-Pace has one owner and no public signup. The first matching environment credential creates owner ID 1. Passwords use a random salt and scrypt.
+Pace supports local signup, with optional environment credentials to bootstrap the first account. Passwords use a random salt and scrypt.
 
-For OAuth, Pace creates a random state value, stores it in a short-lived HttpOnly cookie, exchanges the returned authorization code on the server, and requires the owner's verified email. A different email receives 403.
+For OAuth, Pace creates a random state value, stores it in a short-lived HttpOnly cookie, and exchanges the returned authorization code on the server. It matches provider identity first, then verified email, or creates a separate account.
 
-After password or OAuth authentication, Pace issues its own JWT with subject, issue time, and expiry. Verification checks the expected HS256 algorithm, signature, expiry, integer subject, existing owner, and owner ID. The cookie is HttpOnly and SameSite Strict.
+After password or OAuth authentication, Pace issues its own JWT with subject, issue time, and expiry. Verification checks the expected HS256 algorithm, signature, expiry, integer subject, and existing user. The cookie is HttpOnly and SameSite Strict.
 
 ### 9:30–12:30 — Core application flows
 
-Walk through task completion: validate the request, load the owner's task, detect the state transition, set server UTC completion time, insert the task activity, and commit both writes together.
+Walk through task completion: validate the request, load the authenticated user's task, detect the state transition, set server UTC completion time, insert the task activity, and commit both writes together.
 
 Walk through a daily routine: calculate today in the configured timezone, insert the dated completion, and create the routine activity. The database unique rule handles competing duplicate requests.
 
 Walk through focus start: check for an active row, insert a server timestamp and active slot, and use a uniqueness rule as the final race-safe guarantee. Focus stop locks the row, records the end, calculates duration, clears the slot, and inserts an activity.
 
-For provider sync, the owner pastes a public profile URL. The backend validates the exact host, extracts the username, calls GitHub REST or LeetCode GraphQL, and normalizes provider-specific payloads into Activity. Stable external IDs prevent duplicate imports.
+For provider sync, a user pastes a public profile URL. The backend validates the exact host, extracts the username, calls GitHub REST or LeetCode GraphQL, and normalizes provider-specific payloads into Activity. Stable external IDs prevent duplicate imports.
 
 ### 12:30–16:30 — Scheduler, Kafka, and worker
 
@@ -102,7 +102,7 @@ Explain why PostgreSQL and Kafka both exist. PostgreSQL is the business truth an
 
 ### 16:30–18:00 — Time and reliability
 
-All real instants use UTC. The owner's schedule uses an IANA timezone. Daily summaries calculate local midnight boundaries and convert them to UTC. Half-open ranges avoid double-counting an exact boundary.
+All real instants use UTC. Each user's schedule uses an IANA timezone. Daily summaries calculate local midnight boundaries and convert them to UTC. Half-open ranges avoid double-counting an exact boundary.
 
 Duplicate protection comes from locks, processed markers, stored next occurrences, unique occurrence keys, confirmed publication, row locking in the worker, and terminal-state checks.
 
@@ -144,7 +144,7 @@ The retry topic currently has no timed delay. A production improvement would add
 
 ### Add 1.5 minutes — Security boundaries
 
-Discuss salted scrypt hashes, OAuth state verification, server-side code exchange, verified owner email, non-persisted provider tokens, fixed JWT algorithm checks, constant-time signature comparison, HttpOnly cookies, and SameSite Strict.
+Discuss salted scrypt hashes, OAuth state verification, server-side code exchange, verified email account linking, non-persisted provider tokens, fixed JWT algorithm checks, constant-time signature comparison, HttpOnly cookies, and SameSite Strict.
 
 Mention limits: JWT logout deletes the browser cookie but does not revoke a copied token; rotating the session secret invalidates all tokens.
 
@@ -152,15 +152,15 @@ Mention limits: JWT logout deletes the browser cookie but does not revoke a copi
 
 End with:
 
-> Pace demonstrates that I can connect a product requirement to a reliable backend design. I modeled current and historical state separately, protected state transitions with transactions and constraints, implemented owner authentication with OAuth and JWT, handled local-time schedules correctly, and built a durable PostgreSQL-to-Kafka worker pipeline with bounded retries and dead-letter routing. I also verified schema and behavior against PostgreSQL in CI. I keep the claim honest: it is a personal portfolio system, not a production-scale deployment.
+> Pace demonstrates that I can connect a product requirement to a reliable backend design. I modeled current and historical state separately, protected state transitions with transactions and constraints, implemented multi-user authentication and data isolation with OAuth and JWT, handled local-time schedules correctly, and built a durable PostgreSQL-to-Kafka worker pipeline with bounded retries and dead-letter routing. I also verified schema and behavior against PostgreSQL in CI. I keep the claim honest: it is a portfolio system, not a production-scale deployment.
 
 ## Quick speaking checklist
 
-1. Personal platform, not multi-user SaaS.
+1. Multi-user portfolio platform, not production SaaS.
 2. FastAPI modular monolith for interactive work.
 3. PostgreSQL is the source of truth.
 4. Activity unifies completed work.
-5. OAuth proves owner identity; Pace JWT stores the session.
+5. OAuth proves user identity; Pace JWT stores the session.
 6. UTC instants plus IANA local calendar rules.
 7. Scheduler decides; Kafka transports; worker executes.
 8. PostgreSQL Job stores lifecycle and errors.

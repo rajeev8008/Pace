@@ -12,8 +12,6 @@ from app.database import SessionLocal
 from app.models import Job, JobStatus, JobType, Preference, Task, TaskStatus, Weekday
 from messaging.kafka import JOBS_TOPIC, KafkaPublisher
 
-OWNER_USER_ID = 1
-
 
 def utc(local_date: date, local_time: time, zone: ZoneInfo) -> datetime:
     return datetime.combine(local_date, local_time, zone).astimezone(timezone.utc)
@@ -69,7 +67,6 @@ def claim_due_work(db: Session, now: datetime | None = None) -> list[Job]:
     reminders = db.scalars(
         select(Task)
         .where(
-            Task.user_id == OWNER_USER_ID,
             Task.reminder_at <= now,
             Task.status == TaskStatus.PENDING,
             Task.reminder_processed_at.is_(None),
@@ -89,7 +86,7 @@ def claim_due_work(db: Session, now: datetime | None = None) -> list[Job]:
         )
         task.reminder_processed_at = now
 
-    for preference in db.scalars(select(Preference).where(Preference.user_id == OWNER_USER_ID).with_for_update(skip_locked=True)):
+    for preference in db.scalars(select(Preference).with_for_update(skip_locked=True)):
         if preference.daily_digest_enabled:
             if preference.next_daily_digest_at is None:
                 preference.next_daily_digest_at = next_daily(now, preference)
@@ -128,7 +125,6 @@ def run_once(print_only: bool = False) -> int:
             db.scalars(
                 select(Job)
                 .where(
-                    Job.user_id == OWNER_USER_ID,
                     Job.status == JobStatus.QUEUED,
                     Job.published_at.is_(None),
                 )

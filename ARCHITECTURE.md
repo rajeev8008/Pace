@@ -1,12 +1,12 @@
 # Pace Architecture
 
-Pace is an intentionally single-user productivity system. It combines planning, recurring routines, focused work, completed-work history, GitHub activity, LeetCode submissions, and scheduled email without introducing a separate frontend framework or a generic workflow engine.
+Pace is a multi-user productivity system with a private workspace for each account. It combines planning, recurring routines, focused work, completed-work history, GitHub activity, LeetCode submissions, and scheduled email without introducing a separate frontend framework or a generic workflow engine.
 
 ## System context
 
 ```mermaid
 flowchart TB
-    User([Owner]) --> UI[HTML, CSS, JavaScript]
+    User([User]) --> UI[HTML, CSS, JavaScript]
     UI --> API[FastAPI REST API]
     API --> DB[(PostgreSQL)]
     API --> OAuth[GitHub and Google OAuth]
@@ -52,7 +52,7 @@ Routers are divided by capability:
 
 | Module | Responsibility |
 |---|---|
-| `auth.py` | Owner login, logout, session verification, GitHub OAuth, and Google OAuth |
+| `auth.py` | Signup, login, logout, session verification, GitHub OAuth, and Google OAuth |
 | `tasks.py` | Scheduled-task CRUD and completion activities |
 | `daily_tasks.py` | Recurring routines and local-day completion records |
 | `focus_sessions.py` | Start, stop, list, and read the single active focus timer |
@@ -65,13 +65,13 @@ All application routers except authentication require a valid HS256 JWT from the
 
 ### PostgreSQL
 
-SQLAlchemy 2.x models define the source of truth and Alembic versions `0001` through `0012` evolve the schema. Owned records carry `user_id = 1`, and authentication, scheduling, and workers all enforce that single owner.
+SQLAlchemy 2.x models define the source of truth and Alembic versions `0001` through `0012` evolve the schema. Every private record carries `user_id`, and routes, scheduling, and workers scope data by that authenticated account.
 
 | Table | Stored state and key guarantees |
 |---|---|
-| `users` | The application authenticates only owner `id = 1`; unique username, email, GitHub ID, and Google ID |
+| `users` | Unique username, email, GitHub ID, and Google ID for each account |
 | `tasks` | Status, priority, due/reminder timestamps, completion state, and reminder processing time |
-| `preferences` | One settings row, IANA timezone, email, digest schedules, and next occurrences |
+| `preferences` | One settings row per user, IANA timezone, email, digest schedules, and next occurrences |
 | `daily_tasks` | Definitions of recurring daily routines |
 | `daily_task_completions` | One completion per routine and local calendar date |
 | `focus_sessions` | UTC start/end, duration, category, notes, linked routine, and one nullable active slot |
@@ -79,7 +79,7 @@ SQLAlchemy 2.x models define the source of truth and Alembic versions `0001` thr
 | `external_profiles` | At most one GitHub and one LeetCode profile plus last-sync state |
 | `jobs` | Type, lifecycle, occurrence key, attempts, timestamps, and terminal error |
 
-Database constraints enforce enum-like values, one active focus session, unique external activity IDs, unique source activities, unique scheduling occurrences, and the single-owner model.
+Database constraints enforce enum-like values, one active focus session per user, unique external activity IDs, unique source activities, and unique scheduling occurrences.
 
 ### Scheduler
 
@@ -123,9 +123,9 @@ Handlers call one `send_email(to, subject, body)` boundary. It uses authenticate
 
 ### Authentication
 
-The first matching `APP_USERNAME` / `APP_PASSWORD` login creates owner `id = 1` and stores a random-salt `scrypt` hash. Later login accepts the owner's username or email and issues a seven-day HS256 JWT containing `sub`, `iat`, and `exp` claims. The token is stored in a cookie with `HttpOnly`, `SameSite=Strict`, and environment-controlled `Secure` settings. Public sign-up is not available.
+Local signup creates an account with a random-salt `scrypt` password hash. Login accepts the username or email and issues a seven-day HS256 JWT containing `sub`, `iat`, and `exp` claims. The token is stored in a cookie with `HttpOnly`, `SameSite=Strict`, and environment-controlled `Secure` settings. `APP_USERNAME` and `APP_PASSWORD` can optionally bootstrap the first account.
 
-GitHub and Google OAuth use a random state cookie, provider callbacks, and verified email addresses. OAuth identities can create the owner or link to the existing owner only when the verified email matches. Provider access tokens are used during the callback and are not persisted.
+GitHub and Google OAuth use a random state cookie, provider callbacks, and verified email addresses. Pace first matches the provider identity, then links an existing account with the same verified email, or creates a new account. Provider access tokens are used during the callback and are not persisted.
 
 ### Planning and completion
 
@@ -194,11 +194,11 @@ sequenceDiagram
 - Worker offsets use explicit synchronous commits.
 - Retry and dead-letter state remains inspectable through PostgreSQL job endpoints.
 
-Pace does not currently encrypt application data at the field level, persist OAuth provider tokens, delay retry-topic consumption with backoff, or support multiple application users.
+Pace does not currently encrypt application data at the field level, persist OAuth provider tokens, or delay retry-topic consumption with backoff.
 
 ## Runtime boundary
 
-Pace is intended to run as a personal system. FastAPI, PostgreSQL, Kafka, the scheduler, and the worker run locally or on infrastructure controlled by the owner. GitHub Actions is used only for CI; it does not run application jobs.
+Pace is a non-deployed reference project. FastAPI, PostgreSQL, Kafka, the scheduler, and the worker run locally or in a test environment. GitHub Actions is used only for CI; it does not run application jobs.
 
 ## Verification
 

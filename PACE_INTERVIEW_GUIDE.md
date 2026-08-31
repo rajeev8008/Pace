@@ -1,6 +1,6 @@
 # Pace — Interview Study Guide
 
-This guide explains the current repository: a personal productivity platform demonstrating backend design, durable scheduling, Kafka processing, authentication, external integrations, and testing. It is not presented as a deployed multi-user product.
+This guide explains the current repository: a multi-user personal productivity platform demonstrating backend design, durable scheduling, Kafka processing, authentication, external integrations, and testing. It is a portfolio reference project, not a production deployment.
 
 ## 1. One-sentence explanation
 
@@ -18,7 +18,7 @@ Productive work is normally split across a task list, timer, GitHub, and LeetCod
 - generate task reminders, daily digests, and weekly summaries;
 - keep background work durable when a process restarts.
 
-Pace intentionally supports one owner. There is no public signup and no production-hosting claim.
+Pace supports multiple accounts with private data. It has local signup and optional OAuth, but no production-hosting claim.
 
 ## 3. Technology choices
 
@@ -32,7 +32,7 @@ Pace intentionally supports one owner. There is no public signup and no producti
 | Alembic | Repeatable schema migrations |
 | Apache Kafka | Main, retry, and dead-letter job transport |
 | HTML, CSS, JavaScript | Dependency-free browser interface |
-| OAuth 2.0 | Optional GitHub or Google owner authentication |
+| OAuth 2.0 | Optional GitHub or Google account authentication |
 | HS256 JWT | Pace's own signed login session |
 | SMTP | Optional email delivery; console output during development |
 | GitHub Actions | PostgreSQL-backed CI only |
@@ -84,7 +84,7 @@ flowchart TB
 Important modules:
 
 - `app/main.py` assembles FastAPI and serves `app/static`.
-- `app/auth.py` implements owner login, OAuth, password hashing, JWT creation, and verification.
+- `app/auth.py` implements signup, login, OAuth, password hashing, JWT creation, and verification.
 - `app/api/*.py` contains task, routine, focus, activity, profile, preference, and job endpoints.
 - `app/models.py` defines persisted state and database constraints.
 - `app/schemas.py` validates API input.
@@ -110,11 +110,11 @@ erDiagram
     TASK o|--o{ JOB : reminds
 ```
 
-The application authenticates only owner `id = 1`. Owned rows carry `user_id = 1`, giving interactive and background queries an explicit owner boundary.
+Every private row carries `user_id`, giving interactive and background queries an explicit account boundary.
 
 Main tables:
 
-- **User:** owner credentials, email, display name, and OAuth IDs.
+- **User:** credentials, email, display name, and OAuth IDs.
 - **Task:** current one-time work, priority, due/reminder time, and completion state.
 - **Preference:** timezone, email address, and digest schedules.
 - **DailyTask:** recurring routine definition.
@@ -128,9 +128,9 @@ Important guarantees include one routine completion per date, one active focus s
 
 ## 7. Authentication workflow
 
-### Local owner login
+### Local signup and login
 
-On an empty database, the first login matching `APP_USERNAME` and `APP_PASSWORD` creates owner `id = 1`. The password is salted and hashed with `scrypt`. Later login accepts only the owner's username or email. Public signup is not exposed.
+Signup creates an account whose password is salted and hashed with `scrypt`. Login accepts that account's username or email. `APP_USERNAME` and `APP_PASSWORD` may optionally bootstrap the first account.
 
 ### OAuth
 
@@ -146,21 +146,21 @@ sequenceDiagram
     O->>P: Code and state
     P->>P: Verify state
     P->>O: Exchange code and request verified email
-    P->>D: Create or link owner id 1
+    P->>D: Create or link the user's account
     P->>B: Set Pace JWT cookie
 ```
 
-A different verified email receives `403`. Provider tokens are used only during the callback and are not persisted.
+A new verified email creates a separate account. Provider tokens are used only during the callback and are not persisted.
 
 ### JWT session
 
-Pace issues its own seven-day HS256 JWT containing `sub`, `iat`, and `exp`. Verification checks the expected algorithm, signature, expiry, subject type, existing owner, and `sub == 1`. The cookie is HttpOnly and SameSite Strict. OAuth proves identity; the Pace JWT represents the application session.
+Pace issues its own seven-day HS256 JWT containing `sub`, `iat`, and `exp`. Verification checks the expected algorithm, signature, expiry, integer subject, and existing user. The cookie is HttpOnly and SameSite Strict. OAuth proves identity; the Pace JWT represents the application session.
 
 ## 8. Core workflows
 
 ### Task completion
 
-The route loads the owner's task, changes `PENDING` to `COMPLETED`, records server UTC time, and inserts a matching activity in one transaction. Reopening clears the time and removes the generated activity.
+The route loads the authenticated user's task, changes `PENDING` to `COMPLETED`, records server UTC time, and inserts a matching activity in one transaction. Reopening clears the time and removes the generated activity.
 
 ### Daily routine
 
@@ -172,7 +172,7 @@ The server stores the start timestamp. The browser only renders elapsed time fro
 
 ### Activity and external sync
 
-Task, routine, focus, GitHub, and LeetCode work become normalized Activity rows. The owner connects a public GitHub or LeetCode URL, not a personal token. Provider adapters validate the host, fetch public data, and use stable external IDs to prevent duplicate imports.
+Task, routine, focus, GitHub, and LeetCode work become normalized Activity rows. A user connects a public GitHub or LeetCode URL, not a personal token. Provider adapters validate the host, fetch public data, and use stable external IDs to prevent duplicate imports.
 
 ## 9. Scheduling and Kafka workflow
 
@@ -183,7 +183,7 @@ sequenceDiagram
     participant K as Kafka
     participant W as Worker
     participant M as SMTP
-    S->>D: Lock and find owner work that is due
+    S->>D: Lock and find user work that is due
     S->>D: Insert unique QUEUED job
     S->>K: Publish durable job ID
     S->>D: Record published_at
@@ -230,7 +230,7 @@ The handler calls `send_email(to, subject, body)`. With `SMTP_HOST`, it uses aut
 
 ## 12. CI and verification
 
-GitHub Actions CI starts PostgreSQL 17, installs dependencies, applies Alembic migrations, runs `alembic check`, compiles the project, and runs nine subsystem checks. Coverage includes CRUD, preferences, background jobs, routines, authentication, OAuth owner rejection, focus conflicts, activities, and profile synchronization.
+GitHub Actions CI starts PostgreSQL 17, installs dependencies, applies Alembic migrations, runs `alembic check`, compiles the project, and runs nine subsystem checks. Coverage includes CRUD, per-user isolation, preferences, background jobs, routines, authentication, OAuth account linking, focus conflicts, activities, and profile synchronization.
 
 CI tests the repository; it does not deploy Pace.
 
@@ -242,7 +242,7 @@ The interactive code remains one modular FastAPI application. Kafka is used only
 
 ## 14. Honest limitations
 
-- It is intentionally single-owner.
+- It supports multiple private user workspaces but is not production deployed.
 - Kafka, scheduler, and worker must run for background email.
 - SMTP credentials are required for real delivery.
 - Retry-topic consumption has no delayed exponential backoff.

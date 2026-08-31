@@ -3,7 +3,7 @@ import os
 from fastapi import HTTPException
 from fastapi import Response
 
-from app.auth import _set_session, create_session, hash_password, verify_password, verify_session
+from app.auth import SignupRequest, _set_session, create_session, hash_password, verify_password, verify_session
 from app.models import User
 
 
@@ -12,6 +12,10 @@ def run_checks() -> None:
     password_hash = hash_password("correct-password")
     assert verify_password("correct-password", password_hash)
     assert not verify_password("wrong-password", password_hash)
+    signup = SignupRequest(username="NewUser", email="USER@Example.com", display_name=" New User ", password="strong-password")
+    assert signup.username == "NewUser"
+    assert signup.email == "user@example.com"
+    assert signup.display_name == "New User"
     token = create_session(1)
     assert token.count(".") == 2
     assert verify_session(token) == 1

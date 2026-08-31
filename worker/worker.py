@@ -17,7 +17,6 @@ HANDLERS = {
     JobType.DAILY_DIGEST: handle_daily_digest,
     JobType.WEEKLY_SUMMARY: handle_weekly_summary,
 }
-OWNER_USER_ID = 1
 
 
 def process_job(job_id: str, publisher: KafkaPublisher | None) -> None:
@@ -25,12 +24,6 @@ def process_job(job_id: str, publisher: KafkaPublisher | None) -> None:
         job = db.scalar(select(Job).where(Job.id == job_id).with_for_update())
         if job is None:
             raise ValueError(f"job {job_id} does not exist")
-        if job.user_id != OWNER_USER_ID:
-            job.status = JobStatus.FAILED
-            job.error = "Job does not belong to the Pace owner"
-            job.completed_at = datetime.now(timezone.utc)
-            db.commit()
-            return
         if job.status == JobStatus.SUCCESS or (
             job.status == JobStatus.FAILED and job.attempts >= 3
         ):

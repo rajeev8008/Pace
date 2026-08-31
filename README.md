@@ -71,7 +71,7 @@ All stored timestamps are timezone-aware UTC values. Daily and weekly calculatio
 
 Python, FastAPI, Pydantic, PostgreSQL, SQLAlchemy, Alembic, Apache Kafka, confluent-kafka, OAuth 2.0, HS256 JWT, HTML, CSS, JavaScript, SMTP, and GitHub Actions CI.
 
-Authentication uses salted `scrypt` password hashes, seven-day HS256 JWTs stored in HttpOnly cookies, and optional GitHub or Google OAuth. Pace accepts only the owner account (`id = 1`); OAuth must return the owner's verified email.
+Authentication uses salted `scrypt` password hashes, seven-day HS256 JWTs stored in HttpOnly cookies, and optional GitHub or Google OAuth. Every account receives a private workspace, and all application and background queries are scoped by the authenticated user ID.
 
 ## Project structure
 
@@ -95,7 +95,7 @@ Copy-Item .env.example .env
 & ".\.venv\Scripts\alembic.exe" upgrade head
 ```
 
-Configure `.env` with PostgreSQL, a strong `SESSION_SECRET`, and your `APP_USERNAME` / `APP_PASSWORD`. The first matching local login creates owner `id = 1`. Add OAuth, `GITHUB_SYNC_TOKEN`, and `SMTP_*` values only when those integrations are needed. Gmail SMTP requires an App Password.
+Configure `.env` with PostgreSQL and a strong `SESSION_SECRET`. Users can sign up locally or use GitHub/Google OAuth; `APP_USERNAME` and `APP_PASSWORD` are an optional first-account bootstrap. Add OAuth, `GITHUB_SYNC_TOKEN`, and `SMTP_*` values only when those integrations are needed. Gmail SMTP requires an App Password.
 
 Run the web application, then start the background components in separate terminals:
 
