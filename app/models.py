@@ -1,7 +1,7 @@
 from datetime import date, datetime, time
 from enum import Enum
 
-from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, Enum as SAEnum, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, Enum as SAEnum, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -76,6 +76,7 @@ class Preference(Base):
             "weekly_summary_day IN ('MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY')",
             name="weekday",
         ),
+        Index("ix_preferences_user_id", "user_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
