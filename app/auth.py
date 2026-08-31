@@ -13,9 +13,8 @@ from urllib.request import Request as UrlRequest, urlopen
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import or_, select
-from sqlalchemy.exc import IntegrityError
+from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -26,29 +25,12 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 COOKIE_NAME = "pace_session"
 SESSION_SECONDS = 60 * 60 * 24 * 7
 OAUTH_STATE_COOKIE = "pace_oauth_state"
+OWNER_USER_ID = 1
 
 
 class LoginRequest(BaseModel):
     username: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=8, max_length=128)
-
-
-class SignupRequest(LoginRequest):
-    username: str = Field(min_length=3, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")
-    email: str = Field(max_length=320, pattern=r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
-    display_name: str = Field(min_length=1, max_length=100)
-
-    @field_validator("email")
-    @classmethod
-    def normalize_email(cls, value: str) -> str:
-        return value.strip().lower()
-
-    @field_validator("display_name")
-    @classmethod
-    def clean_display_name(cls, value: str) -> str:
-        if not (value := value.strip()):
-            raise ValueError("Display name cannot be blank")
-        return value
 
 
 def _setting(name: str) -> str:
@@ -111,9 +93,9 @@ def require_auth(
     if not pace_session:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")
     user_id = verify_session(pace_session)
-    if not db.get(User, user_id):
+    if user_id != OWNER_USER_ID or not db.get(User, OWNER_USER_ID):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")
-    return user_id
+    return OWNER_USER_ID
 
 
 def _profile(user: User) -> dict[str, str | None]:
@@ -127,13 +109,13 @@ def _set_session(response: Response, user: User) -> dict[str, str | None]:
         max_age=SESSION_SECONDS,
         httponly=True,
         secure=os.getenv("COOKIE_SECURE", "false").lower() == "true",
-        samesite=os.getenv("COOKIE_SAMESITE", "strict"),
+        samesite="strict",
     )
     return _profile(user)
 
 
 def _oauth_url(request: Request, provider: str) -> str:
-    base = os.getenv("OAUTH_BASE_URL", "").rstrip("/") or (f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}" if os.getenv("RENDER_EXTERNAL_HOSTNAME") else "")
+    base = os.getenv("OAUTH_BASE_URL", "").rstrip("/")
     return f"{base}/auth/oauth/{provider}/callback" if base else str(request.url_for("oauth_callback", provider=provider))
 
 
@@ -150,15 +132,12 @@ def _request_json(url: str, *, data: dict[str, str] | None = None, token: str | 
 
 
 def _oauth_owner(db: Session, provider: str, identity: str, email: str, name: str, username: str) -> User:
-    field = User.github_id if provider == "github" else User.google_id
-    user = db.scalar(select(User).where(field == identity))
+    user = db.get(User, OWNER_USER_ID)
+    if user is not None and user.email and user.email.lower() != email.lower():
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "This OAuth account does not match the Pace owner email")
     if user is None:
-        user = db.scalar(select(User).where(User.email == email.lower()))
-    if user is None:
-        base = re.sub(r"[^A-Za-z0-9_.-]", "", username)[:64] or "pace-user"
-        base = base if len(base) >= 3 else f"{base}pace"
-        clean_username = base if not db.scalar(select(User.id).where(User.username == base)) else f"{base[:57]}-{identity[-6:]}"
-        user = User(username=clean_username, email=email.lower(), display_name=name[:100], password_hash=None, created_at=datetime.now(timezone.utc))
+        clean_username = re.sub(r"[^A-Za-z0-9_.-]", "", username)[:64] or "pace-user"
+        user = User(id=OWNER_USER_ID, username=clean_username if len(clean_username) >= 3 else f"{clean_username}pace", email=email.lower(), display_name=name[:100], password_hash=None, created_at=datetime.now(timezone.utc))
         db.add(user)
     setattr(user, "github_id" if provider == "github" else "google_id", identity)
     user.email = user.email or email.lower()
@@ -212,7 +191,7 @@ def oauth_callback(provider: str, request: Request, code: str, state: str, db: S
         if not token or not profile.get("email_verified"):
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Google did not provide a verified email")
         user = _oauth_owner(db, provider, profile["sub"], profile["email"], profile.get("name") or profile["email"].split("@", 1)[0], profile["email"].split("@", 1)[0])
-    response = RedirectResponse(os.getenv("FRONTEND_URL", "/"))
+    response = RedirectResponse("/")
     response.delete_cookie(OAUTH_STATE_COOKIE)
     _set_session(response, user)
     return response
@@ -226,30 +205,19 @@ def oauth_providers() -> dict[str, bool]:
     }
 
 
-@router.post("/signup", status_code=status.HTTP_201_CREATED)
-def signup(credentials: SignupRequest, response: Response, db: Session = Depends(get_db)) -> dict[str, str | None]:
-    user = User(username=credentials.username, email=credentials.email, display_name=credentials.display_name, password_hash=hash_password(credentials.password), created_at=datetime.now(timezone.utc))
-    db.add(user)
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(status.HTTP_409_CONFLICT, "Username or email is already registered") from None
-    return _set_session(response, user)
-
-
 @router.post("/login")
 def login(credentials: LoginRequest, response: Response, db: Session = Depends(get_db)) -> dict[str, str | None]:
-    user = db.scalar(select(User).where(or_(User.username == credentials.username, User.email == credentials.username.lower())))
-    if user is None and not db.scalar(select(User.id).limit(1)):
+    owner = db.get(User, OWNER_USER_ID)
+    if owner is None:
         env_user, env_password = os.getenv("APP_USERNAME", ""), os.getenv("APP_PASSWORD", "")
         if env_user and env_password and hmac.compare_digest(credentials.username, env_user) and hmac.compare_digest(credentials.password, env_password):
-            user = User(id=1, username=env_user, email=None, display_name=env_user, password_hash=hash_password(env_password), created_at=datetime.now(timezone.utc))
-            db.add(user)
+            owner = User(id=OWNER_USER_ID, username=env_user, email=None, display_name=env_user, password_hash=hash_password(env_password), created_at=datetime.now(timezone.utc))
+            db.add(owner)
             db.commit()
-    if user is None or not user.password_hash or not verify_password(credentials.password, user.password_hash):
+    matches_owner = owner is not None and credentials.username.lower() in {owner.username.lower(), (owner.email or "").lower()}
+    if not matches_owner or not owner.password_hash or not verify_password(credentials.password, owner.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid username or password")
-    return _set_session(response, user)
+    return _set_session(response, owner)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

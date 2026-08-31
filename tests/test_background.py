@@ -5,7 +5,6 @@ from zoneinfo import ZoneInfo
 
 os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["SMTP_HOST"] = ""
-os.environ["RESEND_API_KEY"] = ""
 
 from sqlalchemy.orm import Session
 
@@ -35,11 +34,13 @@ def test_background_flow() -> None:
             reminder_at=now - timedelta(minutes=1),
             created_at=now,
         )
-        db.add(task)
+        outsider_task = Task(user_id=2, title="Other user's reminder", reminder_at=now - timedelta(minutes=1), created_at=now)
+        db.add_all([task, outsider_task])
         db.commit()
         assert len(claim_due_work(db, now)) == 1
         assert len(claim_due_work(db, now)) == 0
         reminder_job = db.query(Job).filter_by(task_id=task.id).one()
+        assert db.query(Job).filter_by(task_id=outsider_task.id).first() is None
         settings = db.query(Preference).filter_by(user_id=1).one()
         settings.daily_digest_enabled = True
         settings.weekly_summary_enabled = True
@@ -86,7 +87,7 @@ def test_background_flow() -> None:
     process_job(reminder_job_id, publisher)
     with SessionLocal() as db:
         assert db.get(Job, reminder_job_id).status == JobStatus.SUCCESS
-        inline_failed = Job(
+        retryable = Job(
             id=str(uuid4()),
             user_id=1,
             type=JobType.TASK_REMINDER,
@@ -94,16 +95,27 @@ def test_background_flow() -> None:
             task_id=998,
             created_at=now,
         )
-        db.add(inline_failed)
+        db.add(retryable)
         db.commit()
-        inline_failed_id = inline_failed.id
+        retryable_id = retryable.id
 
-    process_job(inline_failed_id, None)
+    process_job(retryable_id, None)
     with SessionLocal() as db:
-        inline_failed = db.get(Job, inline_failed_id)
-        assert inline_failed.status == JobStatus.QUEUED
-        assert inline_failed.attempts == 1
-        assert inline_failed.published_at is None
+        retryable = db.get(Job, retryable_id)
+        assert retryable.status == JobStatus.QUEUED
+        assert retryable.attempts == 1
+        assert retryable.published_at is None
+
+        outsider_job = Job(id=str(uuid4()), user_id=2, type=JobType.DAILY_DIGEST, occurrence_key="non-owner", created_at=now)
+        db.add(outsider_job)
+        db.commit()
+        outsider_job_id = outsider_job.id
+
+    process_job(outsider_job_id, publisher)
+    with SessionLocal() as db:
+        outsider_job = db.get(Job, outsider_job_id)
+        assert outsider_job.status == JobStatus.FAILED
+        assert outsider_job.error == "Job does not belong to the Pace owner"
 
     with SessionLocal() as db:
         failed = Job(

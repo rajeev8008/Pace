@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Pace</title>
-  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Handjet:ELSH,wght@2,100..900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
   <main>
@@ -92,15 +92,11 @@
   <dialog id="login" class="login-dialog">
     <form id="login-form">
       <div><p class="brand">Pace</p><h2 id="auth-title">Welcome back</h2><p id="auth-copy">Sign in and find your pace.</p></div>
-      <label id="display-name-field" hidden>Display name<input name="display_name" maxlength="100" autocomplete="name"></label>
-      <label id="email-field" hidden>Email address<input name="email" type="email" maxlength="320" autocomplete="email"></label>
       <label><span id="username-label">Username or email</span><input name="username" autocomplete="username" required autofocus></label>
       <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
-      <label id="confirm-password-field" hidden>Confirm password<input name="confirm_password" type="password" autocomplete="new-password"></label>
       <p id="login-error" role="alert"></p>
       <button type="submit">Sign in</button>
       <div class="oauth-options"><span>or continue with</span><a data-provider="github" href="/auth/oauth/github">GitHub</a><a data-provider="google" href="/auth/oauth/google">Google</a></div>
-      <button type="button" id="auth-switch" class="auth-switch">New to Pace? Create your account</button>
     </form>
   </dialog>
   <dialog id="task-editor">
@@ -128,7 +124,6 @@
     <div><h2>Delete this activity?</h2><p>The original task, routine, or focus session will stay intact.</p><div class="dialog-actions"><button type="button" id="cancel-activity-delete">Keep activity</button><button type="button" class="danger" id="confirm-activity-delete">Delete</button></div></div>
   </dialog>
   <div id="toast" role="status"></div>
-  <script src="./config.js"></script>
-  <script src="./app.js"></script>
+  <script src="/app.js"></script>
 </body>
 </html>

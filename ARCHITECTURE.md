@@ -19,7 +19,7 @@ flowchart TB
     Worker --> DB
     Worker --> RetryTopic
     Worker --> DeadTopic[productivity-jobs-dead]
-    Worker --> Email[Resend HTTPS or SMTP]
+    Worker --> Email[SMTP]
     Email --> User
 ```
 
@@ -52,7 +52,7 @@ Routers are divided by capability:
 
 | Module | Responsibility |
 |---|---|
-| `auth.py` | Sign-up, login, logout, session verification, GitHub OAuth, and Google OAuth |
+| `auth.py` | Owner login, logout, session verification, GitHub OAuth, and Google OAuth |
 | `tasks.py` | Scheduled-task CRUD and completion activities |
 | `daily_tasks.py` | Recurring routines and local-day completion records |
 | `focus_sessions.py` | Start, stop, list, and read the single active focus timer |
@@ -65,11 +65,11 @@ All application routers except authentication require a valid HS256 JWT from the
 
 ### PostgreSQL
 
-SQLAlchemy 2.x models define the source of truth and Alembic versions `0001` through `0010` evolve the schema.
+SQLAlchemy 2.x models define the source of truth and Alembic versions `0001` through `0012` evolve the schema. The latest schema retains ownership columns for compatibility with databases created during the former multi-user version, but the application now accepts only owner `id = 1`.
 
 | Table | Stored state and key guarantees |
 |---|---|
-| `users` | One owner enforced by `id = 1`; unique username, email, GitHub ID, and Google ID |
+| `users` | The application authenticates only owner `id = 1`; unique username, email, GitHub ID, and Google ID |
 | `tasks` | Status, priority, due/reminder timestamps, completion state, and reminder processing time |
 | `preferences` | One settings row, IANA timezone, email, digest schedules, and next occurrences |
 | `daily_tasks` | Definitions of recurring daily routines |
@@ -117,13 +117,13 @@ The lifecycle is `QUEUED -> RUNNING -> SUCCESS`. A handler failure increments `a
 
 ### Email service
 
-Handlers call one `send_email(to, subject, body)` boundary. Hosted deployments use the Resend HTTPS API. Local or paid deployments can instead use authenticated SMTP with optional STARTTLS. Without either provider, it prints the rendered message for local development.
+Handlers call one `send_email(to, subject, body)` boundary. It uses authenticated SMTP with optional STARTTLS. Without an SMTP host, it prints the rendered message for local development.
 
 ## Core flows
 
 ### Authentication
 
-Password sign-up stores a random-salt `scrypt` hash. Login accepts username or email and issues a seven-day HS256 JWT containing `sub`, `iat`, and `exp` claims. The token is stored in a cookie with `HttpOnly`, `SameSite=Strict`, and environment-controlled `Secure` settings.
+The first matching `APP_USERNAME` / `APP_PASSWORD` login creates owner `id = 1` and stores a random-salt `scrypt` hash. Later login accepts the owner's username or email and issues a seven-day HS256 JWT containing `sub`, `iat`, and `exp` claims. The token is stored in a cookie with `HttpOnly`, `SameSite=Strict`, and environment-controlled `Secure` settings. Public sign-up is not available.
 
 GitHub and Google OAuth use a random state cookie, provider callbacks, and verified email addresses. OAuth identities can create the owner or link to the existing owner only when the verified email matches. Provider access tokens are used during the callback and are not persisted.
 
@@ -196,13 +196,9 @@ sequenceDiagram
 
 Pace does not currently encrypt application data at the field level, persist OAuth provider tokens, delay retry-topic consumption with backoff, or support multiple application users.
 
-## Deployment boundary
+## Runtime boundary
 
-The free hosted topology uses GitHub Pages for static files, one Render FastAPI web service, Neon PostgreSQL, and Resend's HTTPS API. Exact-origin CORS and `Secure; SameSite=None` HttpOnly session cookies allow the Pages frontend to call FastAPI. OAuth callbacks return to the Pages URL after Pace issues its session cookie.
-
-GitHub Actions calls `/internal/run-jobs` with a shared bearer secret every ten minutes. That endpoint claims due rows and executes the existing handlers directly, retaining database retries without requiring a free Kafka, scheduler, or worker service. Local and larger deployments can still use the Kafka path unchanged.
-
-The Render-hosted frontend remains available as a same-origin fallback because privacy-focused browsers can block cookies sent from a Pages site to a Render domain. Free-service cold starts and scheduled-action delays mean notification timing is approximate, not production-grade.
+Pace is intended to run as a personal system. FastAPI, PostgreSQL, Kafka, the scheduler, and the worker run locally or on infrastructure controlled by the owner. GitHub Actions is used only for CI; it does not run application jobs.
 
 ## Verification
 

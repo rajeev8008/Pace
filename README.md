@@ -4,8 +4,6 @@
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 [![MIT License](https://img.shields.io/badge/License-MIT-2ea44f.svg)](LICENSE)
 
-**Live deployment:** [pace-rajeev8008.onrender.com](https://pace-rajeev8008.onrender.com/)
-
 I wanted one honest view of my productivity. My daily routines and scheduled tasks lived in one place, focus time existed only in my head, and the work I did on GitHub and LeetCode was scattered across separate profiles. Pace brings those signals together so I can plan what I intend to do and review what I actually accomplished each day. Daily digests and weekly summaries turn that history into a simple reflection I can read, recognize my progress, and feel accomplished.
 
 Pace is a personal productivity platform for daily routines, one-time tasks, focus sessions, developer activity, consistency tracking, reminders, and email summaries.
@@ -32,7 +30,7 @@ GitHub synchronization imports authored commits plus pull requests, issues, rele
 ### Engineering highlights
 
 - Timezone-correct FastAPI and PostgreSQL application with HttpOnly JWT authentication and OAuth
-- Durable scheduled jobs with a direct free-hosting path plus optional Kafka workers
+- Durable scheduled jobs delivered through Kafka workers
 - Unified activity model for Pace completions, GitHub development, and LeetCode practice
 ## Architecture
 
@@ -52,9 +50,7 @@ flowchart LR
 
     Worker["Worker process<br/>Executes background jobs"]
 
-    Email["Email provider<br/>Resend HTTPS or SMTP"]
-
-    Cron["GitHub Actions<br/>Free hosted schedule"]
+    Email["Email provider<br/>SMTP"]
 
     Browser -->|"HTTP / JSON"| API
     API --> DB
@@ -65,20 +61,17 @@ flowchart LR
     Kafka -->|"Consume job"| Worker
     Worker -->|"Read and update job"| DB
     Worker -->|"Send email"| Email
-
-    Cron -->|"Call protected job endpoint"| API
-    API -->|"Run hosted email jobs"| Email
 ```
 
-FastAPI serves the dependency-free frontend and authenticated REST API. PostgreSQL is the source of truth. The full local architecture can publish jobs through Kafka, while the free hosted setup processes the same durable jobs through a protected scheduled endpoint and sends email through Resend's HTTPS API.
+FastAPI serves the dependency-free frontend and authenticated REST API. PostgreSQL is the source of truth. A continuously running scheduler publishes due job IDs to Kafka, and a separate worker sends email through SMTP.
 
 All stored timestamps are timezone-aware UTC values. Daily and weekly calculations use the configured IANA timezone—`Asia/Kolkata` by default—and convert local calendar boundaries to UTC before querying.
 
 ## Stack
 
-Python, FastAPI, Pydantic, PostgreSQL, SQLAlchemy, Alembic, Apache Kafka, confluent-kafka, OAuth 2.0, HS256 JWT, HTML, CSS, JavaScript, Resend/SMTP, GitHub Actions, GitHub Pages, Neon, and Render.
+Python, FastAPI, Pydantic, PostgreSQL, SQLAlchemy, Alembic, Apache Kafka, confluent-kafka, OAuth 2.0, HS256 JWT, HTML, CSS, JavaScript, SMTP, and GitHub Actions CI.
 
-Authentication uses salted `scrypt` password hashes, seven-day HS256 JWTs stored in HttpOnly cookies, and GitHub or Google OAuth. Every account has an isolated private workspace.
+Authentication uses salted `scrypt` password hashes, seven-day HS256 JWTs stored in HttpOnly cookies, and optional GitHub or Google OAuth. Pace accepts only the owner account (`id = 1`); OAuth must return the owner's verified email.
 
 ## Project structure
 
@@ -89,7 +82,6 @@ messaging/   Kafka producer and topic setup
 scheduler/   Due-work detection and job publication
 worker/      Kafka consumer and email handlers
 tests/       Isolated subsystem checks
-render.yaml  Web and PostgreSQL deployment blueprint
 ```
 
 ## Local setup
@@ -103,7 +95,7 @@ Copy-Item .env.example .env
 & ".\.venv\Scripts\alembic.exe" upgrade head
 ```
 
-Configure `.env` with PostgreSQL and a strong `SESSION_SECRET`. Add OAuth, `GITHUB_SYNC_TOKEN`, and `SMTP_*` values only when those integrations are needed. Gmail SMTP requires an App Password.
+Configure `.env` with PostgreSQL, a strong `SESSION_SECRET`, and your `APP_USERNAME` / `APP_PASSWORD`. The first matching local login creates owner `id = 1`. Add OAuth, `GITHUB_SYNC_TOKEN`, and `SMTP_*` values only when those integrations are needed. Gmail SMTP requires an App Password.
 
 Run the web application, then start the background components in separate terminals:
 
@@ -115,29 +107,6 @@ Run the web application, then start the background components in separate termin
 ```
 
 Open `http://127.0.0.1:8000`.
-
-## Free deployment
-
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/rajeev8008/Pace)
-
-The repository is configured for this free hobby-project split:
-
-- **GitHub Pages** serves `app/static` at `https://rajeev8008.github.io/Pace/`.
-- **Render** runs FastAPI at `https://pace-rajeev8008.onrender.com`.
-- **Neon** provides persistent free PostgreSQL instead of Render's 30-day free database.
-- **Resend** delivers mail over HTTPS because free Render services block SMTP ports.
-- **GitHub Actions** calls the protected job endpoint every ten minutes so reminders and summaries run without a paid worker or Kafka broker.
-
-Deploy the Render Blueprint, entering `DATABASE_URL`, `CRON_SECRET`, OAuth credentials, `RESEND_API_KEY`, and `RESEND_FROM`. Add the same `CRON_SECRET` as a GitHub Actions repository secret, then enable Pages with **GitHub Actions** as its source.
-
-Register these OAuth callbacks:
-
-```text
-https://pace-rajeev8008.onrender.com/auth/oauth/github/callback
-https://pace-rajeev8008.onrender.com/auth/oauth/google/callback
-```
-
-Free services can cold-start and scheduled GitHub Actions can be delayed, so this is suitable for a personal project rather than time-critical notifications. The Render-hosted `/` remains a same-origin fallback for browsers that block cross-site cookies used by the Pages frontend.
 
 ## Verification
 
