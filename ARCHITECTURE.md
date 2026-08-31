@@ -65,7 +65,7 @@ All application routers except authentication require a valid HS256 JWT from the
 
 ### PostgreSQL
 
-SQLAlchemy 2.x models define the source of truth and Alembic versions `0001` through `0012` evolve the schema. The latest schema retains ownership columns for compatibility with databases created during the former multi-user version, but the application now accepts only owner `id = 1`.
+SQLAlchemy 2.x models define the source of truth and Alembic versions `0001` through `0012` evolve the schema. Owned records carry `user_id = 1`, and authentication, scheduling, and workers all enforce that single owner.
 
 | Table | Stored state and key guarantees |
 |---|---|

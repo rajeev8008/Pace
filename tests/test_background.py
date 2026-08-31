@@ -91,7 +91,7 @@ def test_background_flow() -> None:
             id=str(uuid4()),
             user_id=1,
             type=JobType.TASK_REMINDER,
-            occurrence_key="missing-inline-task",
+            occurrence_key="missing-task-without-publisher",
             task_id=998,
             created_at=now,
         )
