@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone
 
 os.environ["DATABASE_URL"] = "sqlite://"
 
@@ -7,14 +8,18 @@ from sqlalchemy.orm import Session
 
 from app.api.preferences import read_preferences, update_preferences
 from app.database import Base, engine
+from app.models import User
 from app.schemas import PreferenceUpdate
 
 
 def test_preferences() -> None:
     Base.metadata.create_all(engine)
     with Session(engine) as db:
+        db.add(User(id=1, username="rajeev", email="rajeev@example.com", display_name="Rajeev", created_at=datetime.now(timezone.utc)))
+        db.commit()
         defaults = read_preferences(1, db)
         assert defaults.timezone == "Asia/Kolkata"
+        assert defaults.email == "rajeev@example.com"
         assert defaults.daily_digest_enabled is False
 
         updated = update_preferences(

@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.auth import require_auth
-from app.models import Preference
+from app.models import Preference, User
 from app.schemas import PreferenceRead, PreferenceUpdate
 
 
@@ -14,7 +14,8 @@ router = APIRouter(prefix="/preferences", tags=["preferences"])
 def get_preferences(db: Session, user_id: int) -> Preference:
     preferences = db.scalar(select(Preference).where(Preference.user_id == user_id))
     if preferences is None:
-        preferences = Preference(user_id=user_id)
+        user = db.get(User, user_id)
+        preferences = Preference(user_id=user_id, email=user.email if user else None)
         db.add(preferences)
         db.commit()
         db.refresh(preferences)
