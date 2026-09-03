@@ -18,7 +18,7 @@ Productive work is normally split across a task list, timer, GitHub, and LeetCod
 - generate task reminders, daily digests, and weekly summaries;
 - keep background work durable when a process restarts.
 
-Pace supports multiple accounts with private data. It has local signup and optional OAuth, but no production-hosting claim.
+Pace supports multiple accounts with private data, local signup, and optional OAuth. The public Render deployment is a portfolio-scale service rather than a production-scale claim.
 
 ## 3. Technology choices
 
@@ -35,7 +35,7 @@ Pace supports multiple accounts with private data. It has local signup and optio
 | OAuth 2.0 | Optional GitHub or Google account authentication |
 | HS256 JWT | Pace's own signed login session |
 | SMTP | Optional email delivery; console output during development |
-| GitHub Actions | PostgreSQL-backed CI only |
+| GitHub Actions | PostgreSQL-backed CI and the free-hosting job trigger |
 
 ## 4. High-level design
 
@@ -230,9 +230,9 @@ The handler calls `send_email(to, subject, body)`. With `SMTP_HOST`, it uses aut
 
 ## 12. CI and verification
 
-GitHub Actions CI starts PostgreSQL 17, installs dependencies, applies Alembic migrations, runs `alembic check`, compiles the project, and runs nine subsystem checks. Coverage includes CRUD, per-user isolation, preferences, background jobs, routines, authentication, OAuth account linking, focus conflicts, activities, and profile synchronization.
+GitHub Actions CI starts PostgreSQL 17, installs dependencies, applies Alembic migrations, runs `alembic check`, compiles the project, and runs eleven subsystem checks. Coverage includes CRUD, per-user isolation, preferences, background jobs, routines, authentication, OAuth account linking, focus conflicts, activities, profile synchronization, Gmail SMTP composition, and hosted-job authorization.
 
-CI tests the repository; it does not deploy Pace.
+Render deploys Pace from the repository. A separate scheduled workflow calls the protected job endpoint every ten minutes.
 
 ## 13. Why this is a sensible SDE project
 
@@ -242,7 +242,7 @@ The interactive code remains one modular FastAPI application. Kafka is used only
 
 ## 14. Honest limitations
 
-- It supports multiple private user workspaces but is not production deployed.
+- It supports multiple private user workspaces on a portfolio-scale free deployment.
 - Kafka, scheduler, and worker must run for background email.
 - SMTP credentials are required for real delivery.
 - Retry-topic consumption has no delayed exponential backoff.

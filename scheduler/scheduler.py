@@ -146,6 +146,17 @@ def run_once(print_only: bool = False) -> int:
         return len(jobs)
 
 
+def run_inline_once() -> int:
+    from worker.worker import process_job
+
+    with SessionLocal() as db:
+        claim_due_work(db)
+        job_ids = list(db.scalars(select(Job.id).where(Job.status == JobStatus.QUEUED, Job.published_at.is_(None))))
+    for job_id in job_ids:
+        process_job(job_id, None)
+    return len(job_ids)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--print-only", action="store_true")

@@ -1,6 +1,6 @@
 # Pace — Interview Speeches
 
-These versions describe the current personal, non-deployed Kafka architecture. Speak naturally; do not memorize every sentence.
+These versions describe the current multi-user architecture and portfolio-scale deployment. Speak naturally; do not memorize every sentence.
 
 ## 2-minute version
 
@@ -36,7 +36,7 @@ Duplicate prevention exists at several layers: task reminders have a processed m
 
 Timezones are also a real design concern. Instants are stored in UTC, while “today” and “8 PM” are interpreted in an IANA timezone such as Asia/Kolkata. Daily queries use local midnight to the next local midnight, converted to a half-open UTC range.
 
-GitHub Actions is used only for CI. It launches PostgreSQL 17, applies Alembic migrations, checks model-to-schema drift, compiles Python, and runs nine focused checks. The project is not claimed as a live production system. Its tradeoffs are operating Kafka for a personal workload, no delayed retry backoff, provider rate limits, no JWT revocation list, and at-least-once email behavior.
+GitHub Actions runs CI and triggers hosted jobs every ten minutes. CI launches PostgreSQL 17, applies Alembic migrations, checks model-to-schema drift, compiles Python, and runs eleven focused checks. Render hosts the portfolio-scale web service; Gmail SMTP delivers mail. Tradeoffs include free-service cold starts, provider rate limits, no JWT revocation list, and at-least-once email behavior.
 
 ## 20-minute version
 
@@ -110,7 +110,7 @@ Be honest that email is at-least-once. SMTP and PostgreSQL do not share a transa
 
 ### 18:00–20:00 — CI, tradeoffs, and close
 
-GitHub Actions starts PostgreSQL 17, installs dependencies, migrates to head, runs `alembic check`, compiles the code, and runs nine subsystem checks. SMTP is disabled so CI cannot send real mail.
+GitHub Actions starts PostgreSQL 17, installs dependencies, migrates to head, runs `alembic check`, compiles the code, and runs eleven subsystem checks. SMTP is mocked or disabled so CI cannot send real mail.
 
 Close with the tradeoffs: Kafka is heavier than needed for one person's workload, but it demonstrates a real asynchronous boundary, consumer groups, retries, and dead-letter handling. There is no delayed backoff, no full browser suite, no session revocation list, and no deployment claim.
 
@@ -167,4 +167,4 @@ End with:
 9. Main, retry, and dead-letter topics.
 10. Locks and occurrence keys prevent duplicate creation.
 11. SMTP is optional; console mode keeps tests safe.
-12. GitHub Actions runs PostgreSQL-backed CI only.
+12. GitHub Actions runs PostgreSQL-backed CI and the hosted job trigger.

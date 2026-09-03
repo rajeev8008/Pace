@@ -198,7 +198,7 @@ Pace does not currently encrypt application data at the field level, persist OAu
 
 ## Runtime boundary
 
-Pace is a non-deployed reference project. FastAPI, PostgreSQL, Kafka, the scheduler, and the worker run locally or in a test environment. GitHub Actions is used only for CI; it does not run application jobs.
+Pace runs on Render as one web service backed by PostgreSQL. To fit free hosting, GitHub Actions calls the authenticated job endpoint every ten minutes; that endpoint claims and processes the same durable job rows inline. The complete scheduler, Kafka, and worker path remains available for local or dedicated infrastructure.
 
 ## Verification
 

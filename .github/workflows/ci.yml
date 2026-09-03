@@ -43,3 +43,5 @@ jobs:
       - run: python -m tests.test_activities
       - run: python -m tests.test_oauth
       - run: python -m tests.test_profiles
+      - run: python -m tests.test_email
+      - run: python -m tests.test_hosting
