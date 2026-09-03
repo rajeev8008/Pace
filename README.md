@@ -11,12 +11,13 @@ I wanted one honest view of my productivity. My daily routines and scheduled tas
 Pace is a personal productivity platform for daily routines, one-time tasks, focus sessions, developer activity, consistency tracking, reminders, and email summaries.
 
 <p align="center">
-  <img width="49%" alt="Pace dashboard overview" src="https://github.com/user-attachments/assets/c830e5a2-5f50-4ec8-a02e-629320035f31" />
-  <img width="49%" alt="Pace productivity dashboard" src="https://github.com/user-attachments/assets/58f20227-3584-43e5-8f15-d1d7b92b0d64" />
+  <img width="48%" alt="image" src="https://github.com/user-attachments/assets/d8692fcc-b66b-44d0-a15b-6010f141da4c" />
+  <img width="48%" alt="image" src="https://github.com/user-attachments/assets/f362b6e2-9dcf-4a11-95f0-84741de928bb" />
 </p>
+
 <p align="center">
-  <img width="49%" alt="Pace activity and consistency view" src="https://github.com/user-attachments/assets/30d5d4e0-bd85-4c4c-96ec-8ca967263418" />
-  <img width="49%" alt="Pace focus experience" src="https://github.com/user-attachments/assets/dbcf1e5e-afb5-4b06-a4e9-2be990bce591" />
+  <img width="48%" alt="image" src="https://github.com/user-attachments/assets/b2bac24b-c39c-43f0-91dc-cdb0b49ce062" />
+  <img width="48%" alt="image" src="https://github.com/user-attachments/assets/432df2a6-4f20-42f7-a56c-8b2ffa7d3ca8" />
 </p>
 
 ## What Pace includes
