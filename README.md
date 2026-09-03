@@ -19,21 +19,15 @@ Pace is a personal productivity platform for daily routines, one-time tasks, foc
   <img width="49%" alt="Pace focus experience" src="https://github.com/user-attachments/assets/dbcf1e5e-afb5-4b06-a4e9-2be990bce591" />
 </p>
 
-## What Pace tracks
+## What Pace includes
 
-- **Daily routines** — repeatable work that resets each local calendar day
-- **Scheduled tasks** — one-time work with priority, due date, and reminder controls
-- **Focus** — one active timer linked to a daily routine
-- **Activity** — completed tasks, routines, focus sessions, GitHub work, and accepted LeetCode submissions
-- **Consistency** — an 84-day contribution-style view with repository commit totals and solved problems
+- **Private accounts** — password, GitHub, and Google sign-in with isolated data for every user
+- **Planning** — daily routines and scheduled tasks with priorities, due dates, and reminders
+- **Focus** — one active timer connected to the routine being worked on
+- **Developer activity** — GitHub events and accepted LeetCode submissions imported from public profile links
+- **Progress** — completed work collected into an 84-day consistency view
+- **Digests** — timezone-aware daily or weekly email summaries based on each user's preference
 
-GitHub synchronization imports authored commits plus pull requests, issues, releases, and other profile events. Commits are grouped by repository with their count and latest time. LeetCode synchronization imports recent accepted submissions with problem numbers and titles.
-
-### Engineering highlights
-
-- Timezone-correct FastAPI and PostgreSQL application with HttpOnly JWT authentication and OAuth
-- Durable scheduled jobs delivered through Kafka workers
-- Unified activity model for Pace completions, GitHub development, and LeetCode practice
 ## Architecture
 
 ```mermaid
@@ -46,11 +40,11 @@ flowchart LR
 
     External["External APIs<br/>GitHub REST + LeetCode GraphQL"]
 
-    Scheduler["Scheduler process<br/>Detects due work"]
+    Scheduler["Scheduler<br/>Detects due work"]
 
     Kafka["Kafka<br/>Main, Retry, DLQ topics"]
 
-    Worker["Worker process<br/>Executes background jobs"]
+    Worker["Worker<br/>Sends reminders and digests"]
 
     Email["Email provider<br/>SMTP"]
 
@@ -65,15 +59,22 @@ flowchart LR
     Worker -->|"Send email"| Email
 ```
 
-FastAPI serves the dependency-free frontend and authenticated REST API. PostgreSQL is the source of truth. The full local architecture uses the scheduler, Kafka, and worker. The free hosted version runs the same persisted jobs every ten minutes through an authenticated GitHub Actions trigger and sends mail through Gmail SMTP.
+The browser talks to one FastAPI application, while PostgreSQL remains the source of truth. The scheduler persists due work before publishing it to Kafka; workers process jobs through consumer groups, retry temporary failures, and route exhausted jobs to a dead-letter topic. This keeps reminders and summaries separate from web requests and prevents duplicate delivery.
 
-All stored timestamps are timezone-aware UTC values. Daily and weekly calculations use the configured IANA timezone—`Asia/Kolkata` by default—and convert local calendar boundaries to UTC before querying.
+### Engineering highlights
+
+- Every database query and background job is scoped by authenticated `user_id`
+- Password authentication plus GitHub and Google OAuth, with JWTs stored in HttpOnly cookies
+- UTC storage with IANA-timezone boundaries for accurate daily and weekly scheduling
+- Persisted jobs, duplicate-job prevention, bounded retries, and dead-letter routing
+- Alembic migrations and PostgreSQL-backed checks in GitHub Actions
 
 ## Stack
 
-Python, FastAPI, Pydantic, PostgreSQL, SQLAlchemy, Alembic, Apache Kafka, confluent-kafka, OAuth 2.0, HS256 JWT, HTML, CSS, JavaScript, SMTP, and GitHub Actions CI.
-
-Authentication uses salted `scrypt` password hashes, seven-day HS256 JWTs stored in HttpOnly cookies, and optional GitHub or Google OAuth. Every account receives a private workspace, and all application and background queries are scoped by the authenticated user ID.
+- **Backend:** Python, FastAPI, Pydantic, SQLAlchemy, Alembic, PostgreSQL
+- **Background work:** Apache Kafka, confluent-kafka, SMTP
+- **Frontend:** HTML, CSS, and JavaScript
+- **Security and delivery:** OAuth 2.0, HttpOnly JWT cookies, GitHub Actions
 
 ## Project structure
 
@@ -97,7 +98,7 @@ Copy-Item .env.example .env
 & ".\.venv\Scripts\alembic.exe" upgrade head
 ```
 
-Configure `.env` with PostgreSQL and a strong `SESSION_SECRET`. Users can sign up locally or use GitHub/Google OAuth; `APP_USERNAME` and `APP_PASSWORD` are an optional first-account bootstrap. Add OAuth, `GITHUB_SYNC_TOKEN`, and `SMTP_*` values only when those integrations are needed. Gmail SMTP requires an App Password.
+Configure `.env` with PostgreSQL and a strong `SESSION_SECRET`. Add OAuth, GitHub sync, and SMTP values only for the integrations you want to run; Gmail SMTP requires an App Password.
 
 Run the web application, then start the background components in separate terminals:
 
