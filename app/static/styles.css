@@ -58,7 +58,7 @@ header{position:relative;z-index:30}.profile-connect .connections{width:min(380p
 :root{--cream:#f4f6f8;--paper:#fff;--line:#e4e8ed;--muted:#718096;--shadow:0 8px 28px #102a430d}
 body{background:radial-gradient(circle at 10% 0,#fff1e6 0,transparent 25%),#f4f6f8;background-attachment:fixed}
 main{width:min(1160px,calc(100% - 40px));padding:32px 0 72px}
-header{align-items:center;margin-bottom:26px}.hero-copy{gap:clamp(24px,5vw,64px)}.hero-copy .brand{font-size:clamp(4rem,8vw,6.6rem)}.hero-copy>div{transform:none}.hero-copy h1{font-size:clamp(2rem,4vw,3.4rem)}
+header{align-items:center;margin-bottom:26px}.hero-copy{gap:clamp(24px,5vw,64px)}.hero-copy .brand{font-size:clamp(4rem,8vw,6.6rem)}.hero-copy>div{transform:translateY(12px)}.hero-copy h1{font-size:clamp(2rem,4vw,3.4rem)}
 .header-side{gap:14px}.header-actions{transform:none}.icon{background:#ffffffd9}.icon:hover{border-color:#f9731680;background:#fff}
 .panel,.stats article,.task,.daily-task,.connections,.account-menu{border-color:var(--line);background:#ffffffeb;box-shadow:var(--shadow);backdrop-filter:blur(12px)}
 .panel,.stats article{border-radius:16px}.stats{gap:12px}.stats article{padding:18px 20px}.stats strong{font-size:1.85rem}
@@ -67,4 +67,4 @@ header{align-items:center;margin-bottom:26px}.hero-copy{gap:clamp(24px,5vw,64px)
 button[type=submit],.filter.active,.page-link.active{color:#fff}.composer>form>input,.daily-add input,.focus-form input,.focus-form select,dialog input,dialog select,dialog textarea{border-color:var(--line)}
 dialog{border-color:#ffffff26;border-radius:18px;box-shadow:0 28px 90px #102a4340}.login-dialog form{gap:16px}.login-dialog .brand{font-size:1.9rem}.oauth-options a{border-color:#2d374833;background:#ffffff08}
 html[data-theme="dark"]{--cream:#0c111b;--paper:#121a27;--line:#263244;--shadow:0 10px 30px #0005}html[data-theme="dark"] body{background:radial-gradient(circle at 10% 0,#2b180f 0,transparent 28%),#0c111b}html[data-theme="dark"] .panel,html[data-theme="dark"] .stats article,html[data-theme="dark"] .task,html[data-theme="dark"] .daily-task,html[data-theme="dark"] .icon,html[data-theme="dark"] .page-nav{border-color:var(--line);background:#121a27ed}
-@media(max-width:700px){main{width:min(100% - 24px,1160px);padding-top:20px}header{align-items:start}.hero-copy{gap:18px}.hero-copy .brand{font-size:4.2rem}.hero-copy h1{white-space:normal}.stats{grid-template-columns:1fr 1fr}.stats article:last-child{grid-column:1/-1}.activity-board{gap:12px}}
+@media(max-width:700px){main{width:min(100% - 24px,1160px);padding-top:20px}header{align-items:start}.hero-copy{gap:18px}.hero-copy .brand{font-size:4.2rem}.hero-copy>div{transform:translateY(8px)}.hero-copy h1{white-space:normal}.stats{grid-template-columns:1fr 1fr}.stats article:last-child{grid-column:1/-1}.activity-board{gap:12px}}
