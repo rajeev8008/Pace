@@ -42,9 +42,9 @@ flowchart LR
 
     Scheduler["Scheduler<br/>Detects due work"]
 
-    Kafka["Kafka<br/>Main, Retry, DLQ topics"]
+    Jobs[("PostgreSQL job queue<br/>Saved state + retries")]
 
-    Worker["Worker<br/>Sends reminders and digests"]
+    Runner["Job runner<br/>Sends reminders and digests"]
 
     Email["Email provider<br/>SMTP"]
 
@@ -53,26 +53,26 @@ flowchart LR
     API --> External
 
     Scheduler -->|"Find reminders and digests"| DB
-    Scheduler -->|"Publish job"| Kafka
-    Kafka -->|"Consume job"| Worker
-    Worker -->|"Read and update job"| DB
-    Worker -->|"Send email"| Email
+    Scheduler -->|"Create due job"| Jobs
+    Runner -->|"Claim queued job"| Jobs
+    Jobs --> DB
+    Runner -->|"Send email"| Email
 ```
 
-The browser talks to one FastAPI application, while PostgreSQL remains the source of truth. The scheduler persists due work before publishing it to Kafka; workers process jobs through consumer groups, retry temporary failures, and route exhausted jobs to a dead-letter topic. This keeps reminders and summaries separate from web requests and prevents duplicate delivery.
+The browser talks to one FastAPI application, while PostgreSQL remains the source of truth. The scheduler creates due jobs and the runner processes them from the database. Failed jobs return to the queue for up to three attempts, while unique occurrence keys prevent duplicate reminders and summaries.
 
 ### Engineering highlights
 
 - Every database query and background job is scoped by authenticated `user_id`
 - Password authentication plus GitHub and Google OAuth, with JWTs stored in HttpOnly cookies
 - UTC storage with IANA-timezone boundaries for accurate daily and weekly scheduling
-- Persisted jobs, duplicate-job prevention, bounded retries, and dead-letter routing
+- Persisted jobs, duplicate-job prevention, and three bounded delivery attempts
 - Alembic migrations and PostgreSQL-backed checks in GitHub Actions
 
 ## Stack
 
 - **Backend:** Python, FastAPI, Pydantic, SQLAlchemy, Alembic, PostgreSQL
-- **Background work:** Apache Kafka, confluent-kafka, SMTP
+- **Background work:** PostgreSQL job queue, Python scheduler, SMTP
 - **Frontend:** HTML, CSS, and JavaScript
 - **Security and delivery:** OAuth 2.0, HttpOnly JWT cookies, GitHub Actions
 
@@ -81,15 +81,14 @@ The browser talks to one FastAPI application, while PostgreSQL remains the sourc
 ```text
 app/         FastAPI routes, models, services, and frontend
 alembic/     Versioned PostgreSQL migrations
-messaging/   Kafka producer and topic setup
-scheduler/   Due-work detection and job publication
-worker/      Kafka consumer and email handlers
+scheduler/   Due-work detection and job processing loop
+worker/      Job execution and email handlers
 tests/       Isolated subsystem checks
 ```
 
 ## Local setup
 
-Requirements: Python 3.11+, PostgreSQL, Java, and Kafka.
+Requirements: Python 3.11+ and PostgreSQL.
 
 ```powershell
 python -m venv .venv
@@ -100,13 +99,11 @@ Copy-Item .env.example .env
 
 Configure `.env` with PostgreSQL and a strong `SESSION_SECRET`. Add OAuth, GitHub sync, and SMTP values only for the integrations you want to run; Gmail SMTP requires an App Password.
 
-Run the web application, then start the background components in separate terminals:
+Run the web application, then start the scheduler in a separate terminal:
 
 ```powershell
 & ".\.venv\Scripts\python.exe" -m uvicorn app.main:app --reload
-& ".\.venv\Scripts\python.exe" -m messaging.setup_kafka
 & ".\.venv\Scripts\python.exe" -m scheduler.scheduler
-& ".\.venv\Scripts\python.exe" -m worker.worker
 ```
 
 Open `http://127.0.0.1:8000`.
@@ -117,7 +114,7 @@ GitHub Actions starts PostgreSQL, applies and checks Alembic migrations, compile
 
 ```powershell
 & ".\.venv\Scripts\alembic.exe" check
-& ".\.venv\Scripts\python.exe" -m compileall -q app messaging scheduler worker tests
+& ".\.venv\Scripts\python.exe" -m compileall -q app scheduler worker tests
 Get-ChildItem tests\test_*.py | ForEach-Object { & ".\.venv\Scripts\python.exe" -m "tests.$($_.BaseName)" }
 ```
 

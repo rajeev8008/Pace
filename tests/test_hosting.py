@@ -8,7 +8,7 @@ from app.main import health, run_jobs
 
 def run_checks() -> None:
     assert health() == {"status": "ok"}
-    with patch.dict(os.environ, {"CRON_SECRET": "test-cron-secret"}), patch("app.main.run_inline_once", return_value=3):
+    with patch.dict(os.environ, {"CRON_SECRET": "test-cron-secret"}), patch("app.main.run_once", return_value=3):
         assert run_jobs("Bearer test-cron-secret") == {"processed": 3}
         try:
             run_jobs("Bearer wrong-secret")

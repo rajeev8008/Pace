@@ -12,7 +12,7 @@ from app.api.tasks import router as tasks_router
 from app.api.focus_sessions import router as focus_sessions_router
 from app.api.activities import router as activities_router
 from app.api.profiles import router as profiles_router
-from scheduler.scheduler import run_inline_once
+from scheduler.scheduler import run_once
 app = FastAPI(title="Pace")
 app.include_router(auth_router)
 protected = [Depends(require_auth)]
@@ -35,7 +35,7 @@ def run_jobs(authorization: str | None = Header(default=None)) -> dict[str, int]
     secret = os.getenv("CRON_SECRET", "")
     if not secret or not authorization or not hmac.compare_digest(authorization, f"Bearer {secret}"):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid cron credentials")
-    return {"processed": run_inline_once()}
+    return {"processed": run_once()}
 
 
 app.mount("/", StaticFiles(directory="app/static", html=True), name="frontend")

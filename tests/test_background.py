@@ -10,17 +10,9 @@ from sqlalchemy.orm import Session
 
 from app.database import Base, SessionLocal, engine
 from app.models import Activity, Job, JobStatus, JobType, Preference, Task
-from scheduler.scheduler import claim_due_work
+from scheduler.scheduler import claim_due_work, run_once
 from worker.worker import process_job
 from worker.handlers import bounds, daily_digest, weekly_summary
-
-
-class FakePublisher:
-    def __init__(self) -> None:
-        self.topics = []
-
-    def publish(self, topic: str, payload: dict, key: str) -> None:
-        self.topics.append(topic)
 
 
 def test_background_flow() -> None:
@@ -84,9 +76,7 @@ def test_background_flow() -> None:
         reminder_job_id = reminder_job.id
         second_reminder_job_id = second_reminder_job.id
 
-    publisher = FakePublisher()
-    process_job(reminder_job_id, publisher)
-    process_job(second_reminder_job_id, publisher)
+    assert run_once() == 4
     with SessionLocal() as db:
         assert db.get(Job, reminder_job_id).status == JobStatus.SUCCESS
         assert db.get(Job, second_reminder_job_id).status == JobStatus.SUCCESS
@@ -102,13 +92,11 @@ def test_background_flow() -> None:
         db.commit()
         retryable_id = retryable.id
 
-    process_job(retryable_id, None)
+    process_job(retryable_id)
     with SessionLocal() as db:
         retryable = db.get(Job, retryable_id)
         assert retryable.status == JobStatus.QUEUED
         assert retryable.attempts == 1
-        assert retryable.published_at is None
-
         failed = Job(
             id=str(uuid4()),
             user_id=1,
@@ -121,14 +109,13 @@ def test_background_flow() -> None:
         db.commit()
         failed_id = failed.id
 
-    process_job(failed_id, publisher)
-    process_job(failed_id, publisher)
-    process_job(failed_id, publisher)
+    process_job(failed_id)
+    process_job(failed_id)
+    process_job(failed_id)
     with SessionLocal() as db:
         failed = db.get(Job, failed_id)
         assert failed.status == JobStatus.FAILED
         assert failed.attempts == 3
-        assert publisher.topics[-1] == "productivity-jobs-dead"
 
 
 if __name__ == "__main__":

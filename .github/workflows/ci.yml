@@ -33,7 +33,7 @@ jobs:
       - run: python -m pip install -r requirements.txt
       - run: alembic upgrade head
       - run: alembic check
-      - run: python -m compileall -q app messaging scheduler worker tests
+      - run: python -m compileall -q app scheduler worker tests
       - run: python -m tests.test_phase1
       - run: python -m tests.test_preferences
       - run: python -m tests.test_background

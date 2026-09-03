@@ -17,7 +17,7 @@ def test_phase1_crud() -> None:
     Base.metadata.create_all(engine)
     with Session(engine) as db:
         payload = TaskCreate(
-            title="  Study Kafka  ",
+            title="  Study system design  ",
             due_at="2026-08-23T21:00:00+05:30",
         )
         assert payload.due_at is not None
@@ -29,7 +29,7 @@ def test_phase1_crud() -> None:
         else:
             raise AssertionError("naive timestamp was accepted")
         created = create_task(payload, 1, db)
-        assert created.title == "Study Kafka"
+        assert created.title == "Study system design"
         assert get_task(created.id, 1, db) is created
         assert list_tasks(1, db) == [created]
         assert list_tasks(2, db) == []

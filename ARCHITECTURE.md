@@ -13,13 +13,9 @@ flowchart TB
     API --> External[External APIs: GitHub REST / LeetCode GraphQL]
 
     Scheduler --> DB
-    Scheduler --> MainTopic[productivity-jobs]
-    MainTopic --> Worker[Kafka worker]
-    RetryTopic[productivity-jobs-retry] --> Worker
-    Worker --> DB
-    Worker --> RetryTopic
-    Worker --> DeadTopic[productivity-jobs-dead]
-    Worker --> Email[SMTP]
+    Scheduler --> Runner[Job runner]
+    Runner --> DB
+    Runner --> Email[SMTP]
     Email --> User
 ```
 
@@ -27,8 +23,8 @@ The request path and background path are deliberately separate:
 
 - FastAPI handles interactive operations and profile synchronization.
 - The scheduler detects due reminder and digest work.
-- Kafka transports persisted job identifiers.
-- Workers execute email jobs outside HTTP requests.
+- PostgreSQL stores queued jobs, attempts, and errors.
+- The job runner executes email work outside normal user requests.
 
 ## Runtime components
 
@@ -65,7 +61,7 @@ All application routers except authentication require a valid HS256 JWT from the
 
 ### PostgreSQL
 
-SQLAlchemy 2.x models define the source of truth and Alembic versions `0001` through `0012` evolve the schema. Every private record carries `user_id`, and routes, scheduling, and workers scope data by that authenticated account.
+SQLAlchemy 2.x models define the source of truth and Alembic versions `0001` through `0013` evolve the schema. Every private record carries `user_id`, and routes and scheduled jobs scope data by that authenticated account.
 
 | Table | Stored state and key guarantees |
 |---|---|
@@ -88,32 +84,19 @@ Database constraints enforce enum-like values, one active focus session per user
 1. locks and claims pending task reminders whose `reminder_at` is due;
 2. advances enabled daily and weekly schedule state;
 3. creates durable `QUEUED` job rows with unique occurrence keys;
-4. publishes unpublished job identifiers to Kafka;
-5. records `published_at` only after producer delivery succeeds.
+4. processes queued jobs through the database-backed job runner.
 
 `SELECT ... FOR UPDATE SKIP LOCKED`, `reminder_processed_at`, periodic `next_*` timestamps, and unique occurrence keys prevent repeated scheduling.
 
-### Kafka
+### Job runner and handlers
 
-Pace creates three three-partition topics:
-
-| Topic | Purpose |
-|---|---|
-| `productivity-jobs` | Newly scheduled work |
-| `productivity-jobs-retry` | Jobs awaiting another attempt |
-| `productivity-jobs-dead` | Jobs that exhausted three attempts |
-
-Messages contain the durable job ID, job type, creation timestamp, attempt count, and task ID when applicable. Workers use the `pace-workers` consumer group and commit Kafka offsets only after the database-backed processing attempt completes.
-
-### Worker and handlers
-
-`worker.worker` consumes the main and retry topics, locks the corresponding database job, and dispatches one of three handlers:
+`worker.worker` locks a queued database job and dispatches one of three handlers:
 
 - `TASK_REMINDER`
 - `DAILY_DIGEST`
 - `WEEKLY_SUMMARY`
 
-The lifecycle is `QUEUED -> RUNNING -> SUCCESS`. A handler failure increments `attempts`, records the error, and republishes to the retry topic while fewer than three attempts have run. The third failure marks the job `FAILED` and publishes it to the dead-letter topic. Already successful and terminally failed jobs are ignored when redelivered.
+The lifecycle is `QUEUED -> RUNNING -> SUCCESS`. A handler failure increments `attempts`, records the error, and returns the job to `QUEUED` while fewer than three attempts have run. The third failure marks it `FAILED`. Already successful and terminally failed jobs are ignored.
 
 ### Email service
 
@@ -159,18 +142,15 @@ The dashboard groups same-day commits by repository and shows accepted submissio
 sequenceDiagram
     participant S as Scheduler
     participant D as PostgreSQL
-    participant K as Kafka
-    participant W as Worker
+    participant R as Job runner
     participant M as SMTP
 
     S->>D: Claim due occurrence and create job
-    S->>K: Publish job ID
-    K->>W: Deliver job
-    W->>D: Lock job and mark RUNNING
-    W->>D: Query task or summary data
-    W->>M: Send email
-    W->>D: Mark SUCCESS
-    W->>K: Commit offset
+    S->>R: Process queued job ID
+    R->>D: Lock job and mark RUNNING
+    R->>D: Query task or summary data
+    R->>M: Send email
+    R->>D: Mark SUCCESS or record retry
 ```
 
 ## Time model
@@ -190,15 +170,13 @@ sequenceDiagram
 - OAuth state validation protects callbacks against request forgery.
 - Pydantic validates input shape, lengths, timezone names, and timestamp offsets.
 - Database constraints backstop application validation and concurrency rules.
-- Kafka delivery is confirmed before `published_at` is set.
-- Worker offsets use explicit synchronous commits.
-- Retry and dead-letter state remains inspectable through PostgreSQL job endpoints.
+- Job state and bounded retries remain inspectable through PostgreSQL job endpoints.
 
-Pace does not currently encrypt application data at the field level, persist OAuth provider tokens, or delay retry-topic consumption with backoff.
+Pace does not currently encrypt application data at the field level, persist OAuth provider tokens, or apply delayed retry backoff.
 
 ## Runtime boundary
 
-Pace runs on Render as one web service backed by PostgreSQL. To fit free hosting, GitHub Actions calls the authenticated job endpoint every ten minutes; that endpoint claims and processes the same durable job rows inline. The complete scheduler, Kafka, and worker path remains available for local or dedicated infrastructure.
+Pace runs on Render as one web service backed by PostgreSQL. GitHub Actions calls the authenticated job endpoint every ten minutes; that endpoint claims and processes durable job rows. A local installation can instead keep `scheduler.scheduler` running continuously.
 
 ## Verification
 

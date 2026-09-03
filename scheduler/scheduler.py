@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.models import Job, JobStatus, JobType, Preference, Task, TaskStatus, Weekday
-from messaging.kafka import JOBS_TOPIC, KafkaPublisher
 
 
 def utc(local_date: date, local_time: time, zone: ZoneInfo) -> datetime:
@@ -105,55 +104,22 @@ def claim_due_work(db: Session, now: datetime | None = None) -> list[Job]:
     return jobs
 
 
-def payload(job: Job) -> dict:
-    data = {
-        "job_id": job.id,
-        "type": job.type.value,
-        "created_at": job.created_at.isoformat(),
-        "attempt": job.attempts,
-    }
-    if job.task_id is not None:
-        data["task_id"] = job.task_id
-    return data
-
-
 def run_once(print_only: bool = False) -> int:
-    publisher = None if print_only else KafkaPublisher()
-    with SessionLocal() as db:
-        claim_due_work(db)
-        jobs = list(
-            db.scalars(
-                select(Job)
-                .where(
-                    Job.status == JobStatus.QUEUED,
-                    Job.published_at.is_(None),
-                )
-                .with_for_update(skip_locked=True)
-            )
-        )
-        for job in jobs:
-            if print_only:
-                print(
-                    f"[Scheduler] {job.type.value} due"
-                    + (f" Task ID: {job.task_id}" if job.task_id else "")
-                )
-                job.published_at = datetime.now(timezone.utc)
-                db.commit()
-            else:
-                publisher.publish(JOBS_TOPIC, payload(job), job.id)
-                job.published_at = datetime.now(timezone.utc)
-                db.commit()
-        return len(jobs)
-
-
-def run_inline_once() -> int:
     from worker.worker import process_job
 
     with SessionLocal() as db:
         claim_due_work(db)
-        job_ids = list(db.scalars(select(Job.id).where(Job.status == JobStatus.QUEUED, Job.published_at.is_(None))))
+        jobs = list(db.scalars(select(Job).where(Job.status == JobStatus.QUEUED)))
+        job_ids = [job.id for job in jobs]
+        if print_only:
+            for job in jobs:
+                print(
+                    f"[Scheduler] {job.type.value} due"
+                    + (f" Task ID: {job.task_id}" if job.task_id else "")
+                )
+            return len(jobs)
     for job_id in job_ids:
-        process_job(job_id, None)
+        process_job(job_id)
     return len(job_ids)
 
 
