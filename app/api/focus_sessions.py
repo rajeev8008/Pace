@@ -18,6 +18,17 @@ def utc_aware(value: datetime) -> datetime:
     return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
 
 
+def format_duration(seconds: int) -> str:
+    minutes = max(1, round(seconds / 60))
+    hours, minutes = divmod(minutes, 60)
+    parts = []
+    if hours:
+        parts.append(f"{hours} {'hour' if hours == 1 else 'hours'}")
+    if minutes or not hours:
+        parts.append(f"{minutes} {'minute' if minutes == 1 else 'minutes'}")
+    return " ".join(parts)
+
+
 @router.post("/start", response_model=FocusSessionRead, status_code=status.HTTP_201_CREATED)
 def start_focus_session(payload: FocusSessionStart, user_id: int = Depends(require_auth), db: Session = Depends(get_db)) -> FocusSession:
     if db.scalar(select(FocusSession.id).where(FocusSession.user_id == user_id, FocusSession.ended_at.is_(None)).limit(1)):
@@ -49,9 +60,8 @@ def stop_focus_session(session_id: int, payload: FocusSessionStop | None = None,
     if payload is not None and "notes" in payload.model_fields_set:
         session.notes = payload.notes
     routine = db.scalar(select(DailyTask).where(DailyTask.id == session.daily_task_id, DailyTask.user_id == user_id)) if session.daily_task_id else None
-    minutes = max(1, round(session.duration_seconds / 60))
     detail = f"{session.category} · " if routine and session.category else ""
-    db.add(Activity(user_id=user_id, type="FOCUS", source_type="focus", source_id=session.id, title=routine.title if routine else session.category or "Focus session", detail=f"{detail}Focused for {minutes} min", occurred_at=ended_at))
+    db.add(Activity(user_id=user_id, type="FOCUS", source_type="focus", source_id=session.id, title=routine.title if routine else session.category or "Focus session", detail=f"{detail}Focused for {format_duration(session.duration_seconds)}", occurred_at=ended_at))
     db.commit()
     db.refresh(session)
     return session

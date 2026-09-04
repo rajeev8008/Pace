@@ -7,13 +7,16 @@ from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.focus_sessions import get_active_focus_session, list_focus_sessions, start_focus_session, stop_focus_session
+from app.api.focus_sessions import format_duration, get_active_focus_session, list_focus_sessions, start_focus_session, stop_focus_session
 from app.database import Base, engine
 from app.models import Activity, DailyTask, FocusSession
 from app.schemas import FocusSessionStart, FocusSessionStop
 
 
 def test_focus_sessions() -> None:
+    assert format_duration(25 * 60) == "25 minutes"
+    assert format_duration(60 * 60) == "1 hour"
+    assert format_duration((8 * 60 + 35) * 60) == "8 hours 35 minutes"
     Base.metadata.create_all(engine)
     with Session(engine) as db:
         routine = DailyTask(user_id=1, title="Practice DSA", created_at=datetime.now(timezone.utc))
