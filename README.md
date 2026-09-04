@@ -47,7 +47,7 @@ flowchart LR
 
     Runner["Job runner<br/>Sends reminders and digests"]
 
-    Email["Email provider<br/>SMTP"]
+    Email["Email provider<br/>Resend API or SMTP"]
 
     Browser -->|"HTTP / JSON"| API
     API --> DB
@@ -73,7 +73,7 @@ The browser talks to one FastAPI application, while PostgreSQL remains the sourc
 ## Stack
 
 - **Backend:** Python, FastAPI, Pydantic, SQLAlchemy, Alembic, PostgreSQL
-- **Background work:** PostgreSQL job queue, Python scheduler, SMTP
+- **Background work:** PostgreSQL job queue, Python scheduler, Resend API
 - **Frontend:** HTML, CSS, and JavaScript
 - **Security and delivery:** OAuth 2.0, HttpOnly JWT cookies, GitHub Actions
 
@@ -98,7 +98,7 @@ Copy-Item .env.example .env
 & ".\.venv\Scripts\alembic.exe" upgrade head
 ```
 
-Configure `.env` with PostgreSQL and a strong `SESSION_SECRET`. Add OAuth, GitHub sync, and SMTP values only for the integrations you want to run; Gmail SMTP requires an App Password.
+Configure `.env` with PostgreSQL and a strong `SESSION_SECRET`. Hosted email uses `RESEND_API_KEY` and `RESEND_FROM` from a verified sending domain. SMTP remains an optional local fallback.
 
 Run the web application, then start the scheduler in a separate terminal:
 

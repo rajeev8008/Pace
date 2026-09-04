@@ -15,7 +15,7 @@ flowchart TB
     Scheduler --> DB
     Scheduler --> Runner[Job runner]
     Runner --> DB
-    Runner --> Email[SMTP]
+    Runner --> Email[Resend HTTPS API or SMTP]
     Email --> User
 ```
 
@@ -100,7 +100,7 @@ The lifecycle is `QUEUED -> RUNNING -> SUCCESS`. A handler failure increments `a
 
 ### Email service
 
-Handlers call one `send_email(to, subject, body)` boundary. It uses authenticated SMTP with optional STARTTLS. Without an SMTP host, it prints the rendered message for local development.
+Handlers call one `send_email(to, subject, body)` boundary. Hosted delivery uses the Resend HTTPS API, avoiding blocked SMTP ports. Authenticated SMTP remains a local fallback; without either provider, the message is printed for development.
 
 ## Core flows
 
@@ -143,7 +143,7 @@ sequenceDiagram
     participant S as Scheduler
     participant D as PostgreSQL
     participant R as Job runner
-    participant M as SMTP
+    participant M as Email provider
 
     S->>D: Claim due occurrence and create job
     S->>R: Process queued job ID
@@ -188,4 +188,4 @@ GitHub Actions runs against PostgreSQL 17 and performs:
 4. Python compilation;
 5. isolated checks covering CRUD, preferences, scheduling, routines, authentication, focus, activities, OAuth, and external profiles.
 
-The test suite uses SMTP console mode, so CI verifies message generation and job behavior without sending external email.
+The test suite mocks Resend and SMTP, so CI verifies delivery requests and job behavior without sending external email.

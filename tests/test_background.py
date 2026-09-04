@@ -4,6 +4,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 os.environ["DATABASE_URL"] = "sqlite://"
+os.environ["RESEND_API_KEY"] = ""
 os.environ["SMTP_HOST"] = ""
 
 from sqlalchemy.orm import Session
